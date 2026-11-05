@@ -16,6 +16,7 @@ Milestone escrow for freelance work: the client funds a milestone with PayPal (A
 - Create and edit files with the Edit/Write tools, not PowerShell (`Set-Content`, `Out-File`, etc.) or shell redirection.
 
 ## Conventions
-- Node 24, ES modules, `node:test` for tests, `node:sqlite` for storage.
+- Node 24+, ES modules, `node:test` for tests.
+- Storage: `@libsql/client`, Turso when `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` are set, otherwise a local SQLite file in `DATA_DIR`. Tests use `:memory:`. Screenshots are stored in the DB, not on disk (Render's free disk resets on restart).
 - PayPal sandbox only (`https://api-m.sandbox.paypal.com`).
 - All milestone status changes go through `transition()`; money never moves from the wrong status.

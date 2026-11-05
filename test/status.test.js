@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { openDb, createMilestone, getMilestone, listEvents } from '../src/db.js';
 import { STATUS, transition, canTransition, TransitionError } from '../src/status.js';
 
+const memDb = () => openDb({ url: ':memory:' });
 const newMilestone = (db) =>
   createMilestone(db, {
     clientToken: `c${Math.random()}`, freelancerToken: `f${Math.random()}`,
@@ -19,31 +20,40 @@ test('allowed and forbidden transitions', () => {
   assert.ok(!canTransition('VOIDED', 'FUNDED'));
 });
 
-test('happy path DRAFT → PAID records events', () => {
-  const db = openDb(':memory:');
-  const m = newMilestone(db);
-  for (const s of ['FUNDED', 'SUBMITTED', 'VERIFYING', 'PASSED']) transition(db, m.id, s);
-  transition(db, m.id, STATUS.PAID, { capture_id: 'CAP1' }, 'paid');
-  const after = getMilestone(db, m.id);
+test('happy path DRAFT → PAID records events', async () => {
+  const db = await memDb();
+  const m = await newMilestone(db);
+  for (const s of ['FUNDED', 'SUBMITTED', 'VERIFYING', 'PASSED']) await transition(db, m.id, s);
+  await transition(db, m.id, STATUS.PAID, { capture_id: 'CAP1' }, 'paid');
+  const after = await getMilestone(db, m.id);
   assert.equal(after.status, 'PAID');
   assert.equal(after.capture_id, 'CAP1');
-  assert.deepEqual(listEvents(db, m.id).map((e) => e.status), ['DRAFT', 'FUNDED', 'SUBMITTED', 'VERIFYING', 'PASSED', 'PAID']);
+  assert.deepEqual((await listEvents(db, m.id)).map((e) => e.status), ['DRAFT', 'FUNDED', 'SUBMITTED', 'VERIFYING', 'PASSED', 'PAID']);
 });
 
-test('money cannot move from the wrong status', () => {
-  const db = openDb(':memory:');
-  const m = newMilestone(db);
-  assert.throws(() => transition(db, m.id, STATUS.PAID, { capture_id: 'X' }), TransitionError);
-  assert.throws(() => transition(db, m.id, STATUS.VOIDED), TransitionError);
-  assert.equal(getMilestone(db, m.id).capture_id, null);
-  transition(db, m.id, STATUS.FUNDED);
-  assert.throws(() => transition(db, m.id, STATUS.FUNDED), TransitionError, 'cannot fund twice');
+test('money cannot move from the wrong status, and failed moves leave no event', async () => {
+  const db = await memDb();
+  const m = await newMilestone(db);
+  await assert.rejects(transition(db, m.id, STATUS.PAID, { capture_id: 'X' }), TransitionError);
+  await assert.rejects(transition(db, m.id, STATUS.VOIDED), TransitionError);
+  assert.equal((await getMilestone(db, m.id)).capture_id, null);
+  await transition(db, m.id, STATUS.FUNDED);
+  await assert.rejects(transition(db, m.id, STATUS.FUNDED), TransitionError, 'cannot fund twice');
+  assert.deepEqual((await listEvents(db, m.id)).map((e) => e.status), ['DRAFT', 'FUNDED']);
 });
 
-test('fail → resubmit → void path', () => {
-  const db = openDb(':memory:');
-  const m = newMilestone(db);
-  for (const s of ['FUNDED', 'SUBMITTED', 'VERIFYING', 'FAILED', 'SUBMITTED', 'VERIFYING', 'FAILED', 'VOIDED']) transition(db, m.id, s);
-  assert.equal(getMilestone(db, m.id).status, 'VOIDED');
-  assert.throws(() => transition(db, m.id, STATUS.SUBMITTED), TransitionError);
+test('concurrent transitions: only one wins', async () => {
+  const db = await memDb();
+  const m = await newMilestone(db);
+  await transition(db, m.id, STATUS.FUNDED);
+  const results = await Promise.allSettled([transition(db, m.id, STATUS.VOIDED), transition(db, m.id, STATUS.VOIDED)]);
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+});
+
+test('fail → resubmit → void path', async () => {
+  const db = await memDb();
+  const m = await newMilestone(db);
+  for (const s of ['FUNDED', 'SUBMITTED', 'VERIFYING', 'FAILED', 'SUBMITTED', 'VERIFYING', 'FAILED', 'VOIDED']) await transition(db, m.id, s);
+  assert.equal((await getMilestone(db, m.id)).status, 'VOIDED');
+  await assert.rejects(transition(db, m.id, STATUS.SUBMITTED), TransitionError);
 });

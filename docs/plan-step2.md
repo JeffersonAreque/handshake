@@ -14,6 +14,8 @@
 - Tests cover status transitions, URL safety and the PayPal module (with mocked fetch).
 - Deploy with a Dockerfile (Playwright image) and `render.yaml` on Render's free plan. Then confirm Chromium fits in 512 MB. If it doesn't, stop and propose a fallback.
 
+**Change after the first Render test:** the free plan restarts the container when it's idle and wipes the local disk, which lost a funded milestone. Storage moved to Turso (libsql), with screenshots stored in the DB, and a local SQLite file is used when the Turso variables are missing. An UptimeRobot ping hits `/healthz` every 5 minutes to keep the service awake.
+
 ## Slice 2: real AI
 - `src/ai/` with a Gemini adapter (`AI_PROVIDER`, `AI_MODEL`, `GEMINI_API_KEY`) and a mock adapter.
 - From the client's plain-language brief, Gemini drafts measurable acceptance criteria, which the client can edit before funding.

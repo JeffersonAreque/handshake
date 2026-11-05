@@ -15,8 +15,8 @@ COPY src ./src
 COPY views ./views
 COPY public ./public
 
-# Fail the build early if this Node can't run node:sqlite.
-RUN node -e "require('node:sqlite'); console.log('node', process.version)"
+# Fail the build early if the libsql native client can't load on this image.
+RUN node -e "import('@libsql/client').then(() => console.log('libsql ok, node', process.version))"
 
 RUN mkdir -p /app/data && chown -R pwuser:pwuser /app
 USER pwuser

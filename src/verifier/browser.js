@@ -1,12 +1,11 @@
 // Opens a submitted URL in headless Chromium and collects evidence:
 // desktop + mobile screenshots and objective checks. Page content is data,
 // never instructions.
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { chromium } from 'playwright';
 import { startEgressProxy } from './egressProxy.js';
 
 const PAGE_TIMEOUT_MS = 60_000;
+const MAX_SHOT_HEIGHT = 3000;
 const LAUNCH_ARGS = ['--disable-dev-shm-usage', '--disable-gpu', '--disable-extensions', '--mute-audio', '--no-first-run', '--disable-quic'];
 
 const VIEWPORTS = [
@@ -14,7 +13,7 @@ const VIEWPORTS = [
   { label: 'mobile', options: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } },
 ];
 
-async function capturePage(browser, url, { label, options }, outDir) {
+async function capturePage(browser, url, { label, options }) {
   const context = await browser.newContext({ ...options, ignoreHTTPSErrors: false, javaScriptEnabled: true, serviceWorkers: 'block' });
   const page = await context.newPage();
   const consoleErrors = [];
@@ -39,10 +38,13 @@ async function capturePage(browser, url, { label, options }, outDir) {
     throw new Error(`Could not open the page (${label}): ${err.message.split('\n')[0]}`);
   }
   const loadMs = Date.now() - started;
-  const file = `${label}.png`;
-  await page.screenshot({ path: path.join(outDir, file), fullPage: true, timeout: 15_000 }).catch(() =>
-    page.screenshot({ path: path.join(outDir, file), timeout: 15_000 })
-  );
+  // Full page, capped in height and as JPEG, so evidence stays small in the DB.
+  const height = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => 0);
+  const shot = { type: 'jpeg', quality: 70, timeout: 15_000 };
+  const viewportSize = page.viewportSize();
+  const data = await page
+    .screenshot({ ...shot, fullPage: true, clip: { x: 0, y: 0, width: viewportSize.width, height: Math.min(Math.max(height, viewportSize.height), MAX_SHOT_HEIGHT) } })
+    .catch(() => page.screenshot(shot));
   const info = await page.evaluate(() => ({
     title: document.title,
     text: (document.body?.innerText || '').slice(0, 4000),
@@ -51,7 +53,7 @@ async function capturePage(browser, url, { label, options }, outDir) {
   }));
   const result = {
     label,
-    file,
+    data,
     httpStatus: response?.status() ?? null,
     finalUrl: page.url(),
     loadMs,
@@ -66,11 +68,10 @@ async function capturePage(browser, url, { label, options }, outDir) {
 
 /**
  * Captures `url` on desktop and mobile. Returns
- * { checks: {...}, screenshots: [{label, file}] }. Throws on unsafe URL or
- * if the page can't be opened.
+ * { checks: {...}, images: [{label, data: Buffer (JPEG)}] }. Throws if the
+ * page can't be opened.
  */
-export async function captureEvidence(url, outDir, { allowPrivate = false } = {}) {
-  await fs.mkdir(outDir, { recursive: true });
+export async function captureEvidence(url, { allowPrivate = false } = {}) {
   // Unless explicitly allowed (local dev), all browser traffic goes through
   // the egress proxy, which blocks private/internal addresses. '<-loopback>'
   // stops Chromium from silently bypassing the proxy for localhost.
@@ -82,7 +83,7 @@ export async function captureEvidence(url, outDir, { allowPrivate = false } = {}
   });
   try {
     const pages = [];
-    for (const viewport of VIEWPORTS) pages.push(await capturePage(browser, url, viewport, outDir));
+    for (const viewport of VIEWPORTS) pages.push(await capturePage(browser, url, viewport));
     const [desktop, mobile] = pages;
     return {
       checks: {
@@ -99,7 +100,7 @@ export async function captureEvidence(url, outDir, { allowPrivate = false } = {}
         blockedHosts: proxy ? [...new Set(proxy.blocked)] : [],
         text: desktop.text,
       },
-      screenshots: pages.map((p) => ({ label: p.label, file: p.file })),
+      images: pages.map((p) => ({ label: p.label, data: p.data })),
     };
   } finally {
     await browser.close();

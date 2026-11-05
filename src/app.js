@@ -43,8 +43,8 @@ export function createApp({ db, paypal, verifier, config }) {
   app.use(express.json({ limit: '20kb' }));
   app.locals.baseUrl = config.baseUrl;
 
-  const load = (req, res, role) => {
-    const found = store.getMilestoneByToken(db, req.params.token);
+  const load = async (req, res, role) => {
+    const found = await store.getMilestoneByToken(db, req.params.token);
     if (!found || (role && found.role !== role)) {
       res.status(404).render('error', { title: 'Not found', message: 'This milestone link is not valid.' });
       return null;
@@ -52,18 +52,18 @@ export function createApp({ db, paypal, verifier, config }) {
     return found;
   };
 
-  const renderMilestone = (res, { milestone, role }, extra = {}) =>
+  const renderMilestone = async (res, { milestone, role }, extra = {}) => {
+    const view = await store.getMilestoneView(db, milestone.id);
     res.render('milestone', {
       title: milestone.title,
       m: milestone,
       role,
-      reports: store.listReports(db, milestone.id),
-      events: store.listEvents(db, milestone.id),
-      submission: store.latestSubmission(db, milestone.id),
+      ...view,
       paypalClientId: config.paypal.clientId,
       error: null,
       ...extra,
     });
+  };
 
   app.get('/healthz', (req, res) => {
     // Container memory (cgroup v2) helps confirm Chromium fits the instance.
@@ -71,6 +71,7 @@ export function createApp({ db, paypal, verifier, config }) {
     res.json({
       ok: true,
       node: process.version,
+      storage: config.storage,
       memoryMb: { current: readMb('/sys/fs/cgroup/memory.current'), peak: readMb('/sys/fs/cgroup/memory.peak'), rss: Math.round(process.memoryUsage().rss / 1048576) },
     });
   });
@@ -81,21 +82,21 @@ export function createApp({ db, paypal, verifier, config }) {
     res.render('new', { title: 'New milestone', errors: [], form: { amount: '25.00' } })
   );
 
-  app.post('/milestones', (req, res) => {
+  app.post('/milestones', async (req, res) => {
     const { errors, value } = validateMilestoneInput(req.body);
     if (errors.length) return res.status(422).render('new', { title: 'New milestone', errors, form: req.body });
-    const m = store.createMilestone(db, { ...value, clientToken: newToken(), freelancerToken: newToken() });
+    const m = await store.createMilestone(db, { ...value, clientToken: newToken(), freelancerToken: newToken() });
     res.redirect(303, `/c/${m.client_token}`);
   });
 
   // ----- Client -----
-  app.get('/c/:token', (req, res) => {
-    const found = load(req, res, 'client');
-    if (found) renderMilestone(res, found);
+  app.get('/c/:token', async (req, res) => {
+    const found = await load(req, res, 'client');
+    if (found) await renderMilestone(res, found);
   });
 
   app.post('/api/c/:token/order', async (req, res) => {
-    const found = store.getMilestoneByToken(db, req.params.token);
+    const found = await store.getMilestoneByToken(db, req.params.token);
     if (!found || found.role !== 'client') return res.status(404).json({ error: 'Not found' });
     const m = found.milestone;
     if (m.status !== STATUS.DRAFT) return res.status(409).json({ error: `Milestone is ${m.status}` });
@@ -107,7 +108,7 @@ export function createApp({ db, paypal, verifier, config }) {
         referenceId: `milestone-${m.id}`,
         description: `Handshake milestone: ${m.title}`,
       });
-      store.updateMilestone(db, m.id, { order_id: order.id, last_error: null });
+      await store.updateMilestone(db, m.id, { order_id: order.id, last_error: null });
       res.json({ id: order.id });
     } catch (err) {
       console.error(`[order] milestone ${m.id}: ${err.message}`);
@@ -116,7 +117,7 @@ export function createApp({ db, paypal, verifier, config }) {
   });
 
   app.post('/api/c/:token/authorize', async (req, res) => {
-    const found = store.getMilestoneByToken(db, req.params.token);
+    const found = await store.getMilestoneByToken(db, req.params.token);
     if (!found || found.role !== 'client') return res.status(404).json({ error: 'Not found' });
     const m = found.milestone;
     if (m.status !== STATUS.DRAFT) return res.status(409).json({ error: `Milestone is ${m.status}` });
@@ -124,17 +125,17 @@ export function createApp({ db, paypal, verifier, config }) {
     try {
       const auth = await paypal.authorizeOrder(m.order_id);
       if (auth.status !== 'CREATED') throw new Error(`Authorization status ${auth.status}`);
-      transition(db, m.id, STATUS.FUNDED, { authorization_id: auth.id, last_error: null }, `Authorized ${auth.amount?.value ?? m.amount} ${m.currency} (held, not charged)`);
+      await transition(db, m.id, STATUS.FUNDED, { authorization_id: auth.id, last_error: null }, `Authorized ${auth.amount?.value ?? m.amount} ${m.currency} (held, not charged)`);
       res.json({ ok: true });
     } catch (err) {
       console.error(`[authorize] milestone ${m.id}: ${err.message}`);
-      store.updateMilestone(db, m.id, { last_error: `Authorization failed: ${err.message}` });
+      await store.updateMilestone(db, m.id, { last_error: `Authorization failed: ${err.message}` });
       res.status(502).json({ error: 'PayPal could not authorize this payment.' });
     }
   });
 
   app.post('/c/:token/void', async (req, res) => {
-    const found = load(req, res, 'client');
+    const found = await load(req, res, 'client');
     if (!found) return;
     const m = found.milestone;
     if (m.status !== STATUS.FUNDED && m.status !== STATUS.FAILED) {
@@ -143,29 +144,29 @@ export function createApp({ db, paypal, verifier, config }) {
     try {
       const auth = await paypal.voidAuthorization(m.authorization_id);
       if (auth.status !== 'VOIDED') throw new Error(`Authorization status ${auth.status}`);
-      transition(db, m.id, STATUS.VOIDED, { last_error: null }, 'Client cancelled; hold released');
+      await transition(db, m.id, STATUS.VOIDED, { last_error: null }, 'Client cancelled; hold released');
       res.redirect(303, `/c/${m.client_token}`);
     } catch (err) {
       console.error(`[void] milestone ${m.id}: ${err.message}`);
-      renderMilestone(res.status(502), found, { error: 'PayPal could not cancel the hold. Please try again.' });
+      await renderMilestone(res.status(502), found, { error: 'PayPal could not cancel the hold. Please try again.' });
     }
   });
 
   app.post('/c/:token/payout', async (req, res) => {
-    const found = load(req, res, 'client');
+    const found = await load(req, res, 'client');
     if (!found) return;
     await verifier.payout(found.milestone.id);
     res.redirect(303, `/c/${found.milestone.client_token}`);
   });
 
   // ----- Freelancer -----
-  app.get('/f/:token', (req, res) => {
-    const found = load(req, res, 'freelancer');
-    if (found) renderMilestone(res, found);
+  app.get('/f/:token', async (req, res) => {
+    const found = await load(req, res, 'freelancer');
+    if (found) await renderMilestone(res, found);
   });
 
   app.post('/f/:token/submit', async (req, res) => {
-    const found = load(req, res, 'freelancer');
+    const found = await load(req, res, 'freelancer');
     if (!found) return;
     const m = found.milestone;
     let url;
@@ -176,24 +177,26 @@ export function createApp({ db, paypal, verifier, config }) {
       return renderMilestone(res.status(422), found, { error: message, submittedUrl: req.body.url });
     }
     try {
-      transition(db, m.id, STATUS.SUBMITTED, {}, `Submitted ${url}`);
+      await transition(db, m.id, STATUS.SUBMITTED, {}, `Submitted ${url}`);
     } catch (err) {
       if (!(err instanceof TransitionError)) throw err;
       return renderMilestone(res.status(409), found, { error: `You can’t submit while the milestone is ${m.status}.` });
     }
-    const submission = store.addSubmission(db, m.id, url);
-    verifier.enqueue(m.id, submission.id);
+    const submission = await store.addSubmission(db, m.id, url);
+    verifier.enqueue(m.id, Number(submission.id));
     res.redirect(303, `/f/${m.freelancer_token}`);
   });
 
-  // ----- Evidence (screenshots), visible to both roles of that milestone -----
-  app.get('/e/:token/:submissionId/:file', (req, res) => {
-    const found = store.getMilestoneByToken(db, req.params.token);
-    const file = req.params.file;
-    if (!found || !/^(desktop|mobile)\.png$/.test(file)) return res.status(404).end();
-    const s = db.prepare('SELECT id FROM submissions WHERE id = ? AND milestone_id = ?').get(Number(req.params.submissionId), found.milestone.id);
-    if (!s) return res.status(404).end();
-    res.sendFile(path.join(config.dataDir, 'evidence', String(s.id), file), (err) => err && !res.headersSent && res.status(404).end());
+  // ----- Evidence (screenshots from the DB), visible to both roles of that milestone -----
+  app.get('/e/:token/:submissionId/:file', async (req, res) => {
+    const match = /^(desktop|mobile)\.jpg$/.exec(req.params.file);
+    const submissionId = Number(req.params.submissionId);
+    if (!match || !Number.isInteger(submissionId)) return res.status(404).end();
+    const found = await store.getMilestoneByToken(db, req.params.token);
+    if (!found) return res.status(404).end();
+    const shot = await store.getScreenshot(db, found.milestone.id, submissionId, match[1]);
+    if (!shot) return res.status(404).end();
+    res.set({ 'Content-Type': shot.mime, 'Cache-Control': 'private, max-age=86400' }).send(shot.data);
   });
 
   app.use((req, res) => res.status(404).render('error', { title: 'Not found', message: 'Page not found.' }));
