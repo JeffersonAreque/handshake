@@ -10,15 +10,18 @@ export { AiError };
  * @param {{provider: string, model?: string, fallbackModel?: string, apiKey?: string, client?: object}} options
  *   provider: 'gemini' | 'mock'. Fails closed: 'gemini' without a key throws.
  */
-export function createAi({ provider = 'mock', model, fallbackModel, apiKey, client } = {}) {
+export function createAi({ provider = 'mock', model, fallbackModels, apiKey, client } = {}) {
   let adapter;
-  if (provider === 'gemini') adapter = createGemini({ apiKey, model: model || undefined, fallbackModel, client });
+  if (provider === 'gemini') adapter = createGemini({ apiKey, model: model || undefined, fallbackModels, client });
   else if (provider === 'mock') adapter = createMock();
   else throw new AiError(`Unknown AI_PROVIDER "${provider}" (use gemini or mock)`);
 
   return {
     provider: adapter.provider,
     model: adapter.model,
+    /** Probes each configured model once; returns { chain, health }. */
+    checkModels: () => (adapter.checkModels ? adapter.checkModels() : Promise.resolve({ chain: [adapter.model], health: {} })),
+    status: () => (adapter.status ? adapter.status() : { chain: [adapter.model], health: {} }),
     /**
      * One verdict per criterion, validated. Returns { verdicts, model } where
      * model is the one that answered (the fallback if the main one was out of quota).

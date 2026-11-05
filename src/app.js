@@ -80,12 +80,15 @@ export function createApp({ db, paypal, money, verifier, ai, config }) {
 
   const renderMilestone = async (res, { milestone, role }, extra = {}) => {
     const view = await store.getMilestoneView(db, milestone.id);
+    // The latest attempt wasn't judged (AI unavailable): neutral, not a failure.
+    const notJudged = milestone.status === STATUS.FUNDED && Boolean(view.reports[0]) && !view.reports[0].judged;
     res.render('milestone', {
       title: milestone.title,
       m: milestone,
       role,
       ...view,
-      timeline: buildTimeline(milestone.status, view.events),
+      notJudged,
+      timeline: buildTimeline(milestone.status, view.events, { notJudged }),
       step: currentStep(milestone.id),
       demoSites: { good: demoSiteUrl(config.baseUrl, 'good'), broken: demoSiteUrl(config.baseUrl, 'broken') },
       paypalClientId: config.paypal.clientId,
@@ -102,7 +105,8 @@ export function createApp({ db, paypal, money, verifier, ai, config }) {
   };
 
   app.get('/healthz', (req, res) => {
-    res.json({ ok: true, node: process.version, storage: config.storage, memory: memoryReport() });
+    const { chain, health } = ai.status();
+    res.json({ ok: true, node: process.version, storage: config.storage, ai: { provider: ai.provider, chain, health }, memory: memoryReport() });
   });
 
   // Diagnostic browser run against a fixed allowlist only (no user URLs),

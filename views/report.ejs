@@ -14,15 +14,30 @@
     <p class="mono muted" style="margin:0"><a href="<%= r.url %>" target="_blank" rel="noreferrer"><%= r.url %></a></p>
   </div>
   <div class="amount-big">
-    <strong style="color:var(<%= r.passed ? '--ok' : '--bad' %>)"><%= passedCount %>/<%= r.verdicts.length %></strong>
-    <span class="badge <%= r.passed ? 'pass' : 'fail' %>"><%= r.passed ? 'All criteria passed' : 'Changes needed' %></span>
+    <% if (!r.judged) { %>
+      <strong style="color:var(--text-2)">—</strong>
+      <span class="badge s-notjudged">Not judged</span>
+    <% } else { %>
+      <strong style="color:var(<%= r.passed ? '--ok' : '--bad' %>)"><%= passedCount %>/<%= r.verdicts.length %></strong>
+      <span class="badge <%= r.passed ? 'pass' : 'fail' %>"><%= r.passed ? 'All criteria passed' : 'Changes needed' %></span>
+    <% } %>
   </div>
 </div>
 
-<div class="alert info"><div>Verified by <b><%= r.model %></b>. Each pass had to cite evidence (a screenshot or a browser check), and page text was treated as untrusted data.</div></div>
-<% if (r.error) { %><div class="alert warn"><%= r.error %></div><% } %>
+<% if (!r.judged) { %>
+  <div class="alert neutral"><div><b>Not judged, please resubmit.</b> <%= r.error %> The page was captured, but no criterion was evaluated, so this attempt counts neither as a pass nor as a fail.</div></div>
+<% } else { %>
+  <div class="alert info"><div>Verified by <b><%= r.model %></b>. Each pass had to cite evidence (a screenshot or a browser check), and page text was treated as untrusted data.</div></div>
+  <% if (r.error) { %><div class="alert warn"><%= r.error %></div><% } %>
+<% } %>
 
 <div class="grid-2">
+  <% if (!r.judged) { %>
+  <section class="card">
+    <div class="card-head"><h2>Criteria</h2><span class="muted small">not evaluated</span></div>
+    <ol class="criteria"><% r.verdicts.forEach(v => { %><li><span><%= v.criterion %></span></li><% }) %></ol>
+  </section>
+  <% } else { %>
   <section class="card">
     <div class="card-head"><h2>Criteria</h2></div>
     <ol class="verdicts">
@@ -38,6 +53,7 @@
       <% }) %>
     </ol>
   </section>
+  <% } %>
 
   <div>
     <% if (!r.passed && r.fixes.length) { %>

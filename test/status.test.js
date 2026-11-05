@@ -14,6 +14,8 @@ test('allowed and forbidden transitions', () => {
   assert.ok(canTransition('DRAFT', 'FUNDED'));
   assert.ok(canTransition('FAILED', 'SUBMITTED'));
   assert.ok(canTransition('PAID', 'REFUNDED'));
+  assert.ok(canTransition('VERIFYING', 'FUNDED'), 'not judged → back to funded');
+  assert.ok(!canTransition('PAID', 'FUNDED'));
   assert.ok(!canTransition('DRAFT', 'PAID'));
   assert.ok(!canTransition('FUNDED', 'PAID'));
   assert.ok(!canTransition('VERIFYING', 'VOIDED'));

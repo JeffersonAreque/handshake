@@ -141,13 +141,14 @@ form.inline { display: inline; }
 .badge.s-submitted, .badge.s-verifying { background: var(--warn-soft); color: var(--warn); }
 .badge.s-passed, .badge.s-paid, .badge.pass { background: var(--ok-soft); color: var(--ok); }
 .badge.s-failed, .badge.fail { background: var(--bad-soft); color: var(--bad); }
-.badge.s-voided, .badge.s-refunded { background: var(--bg-tint); color: var(--text-2); }
+.badge.s-voided, .badge.s-refunded, .badge.s-notjudged { background: var(--bg-tint); color: var(--text-2); }
 .chip { display: inline-block; font: 12px/1.6 var(--mono); padding: 1px 8px; border-radius: 99px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); }
 .alert { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius-sm); margin: 0 0 16px; font-size: 15px; border: 1px solid transparent; }
 .alert.error { background: var(--bad-soft); color: var(--bad); }
 .alert.warn { background: var(--warn-soft); color: var(--warn); }
 .alert.info { background: var(--info-soft); color: var(--info); }
 .alert.ok { background: var(--ok-soft); color: var(--ok); }
+.alert.neutral { background: var(--bg-tint); color: var(--text-2); border-color: var(--border-strong); }
 .alert b { color: inherit; }
 
 /* ---------- Forms ---------- */
@@ -206,7 +207,7 @@ textarea { resize: vertical; }
 }
 .outcome { margin-top: 18px; padding: 12px 14px; border-radius: 12px; font-weight: 600; font-size: 15px; text-align: center; }
 .outcome.failed { background: var(--bad-soft); color: var(--bad); }
-.outcome.voided, .outcome.refunded { background: var(--bg-tint); color: var(--text-2); }
+.outcome.voided, .outcome.refunded, .outcome.notjudged { background: var(--bg-tint); color: var(--text-2); }
 .live { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); font-weight: 600; font-size: 15px; }
 .live .spinner { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
 .live[hidden] { display: none; }

@@ -25,7 +25,7 @@
 
 <div class="page-head">
   <div>
-    <div class="eyebrow"><span class="role-pill"><%= role %> view</span><span class="badge s-<%= m.status.toLowerCase() %>" id="status-badge"><%= labels[m.status] %></span></div>
+    <div class="eyebrow"><span class="role-pill"><%= role %> view</span><% if (notJudged) { %><span class="badge s-notjudged" id="status-badge">Not judged, please resubmit</span><% } else { %><span class="badge s-<%= m.status.toLowerCase() %>" id="status-badge"><%= labels[m.status] %></span><% } %></div>
     <h1><%= m.title %></h1>
     <% if (m.description) { %><p class="muted" style="margin:0"><%= m.description %></p><% } %>
   </div>
@@ -68,6 +68,8 @@
           <% } else { %>
             <div class="alert warn">PayPal is not configured on this server.</div>
           <% } %>
+        <% } else if (m.status === 'FUNDED' && notJudged) { %>
+          <p><b>$<%= m.amount %> is held.</b> The last delivery couldn’t be judged because the AI verifier was unavailable, so nothing was decided. The freelancer can resubmit.</p>
         <% } else if (m.status === 'FUNDED') { %>
           <p><b>$<%= m.amount %> is held</b>. Waiting for the freelancer to deliver.</p>
         <% } else if (m.status === 'FAILED') { %>
@@ -124,8 +126,8 @@
     <% if (role === 'freelancer') { %>
       <section class="card">
         <div class="card-head"><h2>Deliver</h2></div>
-        <% if (m.status === 'FAILED' && latest && latest.error) { %>
-          <div class="alert info"><div><b>Your last attempt wasn’t judged.</b> <%= latest.error %></div></div>
+        <% if (notJudged) { %>
+          <div class="alert neutral"><div><b>Not judged, please resubmit.</b> <%= latest.error %> Your work was not marked as failing.</div></div>
         <% } %>
         <% if (m.status === 'FAILED' && latest && latest.fixes.length) { %>
           <div class="fixes">
@@ -141,7 +143,7 @@
           <form method="post" action="/f/<%= token %>/submit" id="submit-form">
             <div class="input-group">
               <input name="url" id="url" type="url" required placeholder="https://your-work.example.com" aria-label="Delivery URL" value="<%= typeof submittedUrl !== 'undefined' ? submittedUrl : (submission ? submission.url : '') %>">
-              <button class="btn btn-primary" type="submit"><%= m.status === 'FAILED' ? 'Resubmit' : 'Submit for verification' %></button>
+              <button class="btn btn-primary" type="submit"><%= m.status === 'FAILED' || notJudged ? 'Resubmit' : 'Submit for verification' %></button>
             </div>
           </form>
           <% if (m.demo_kind) { %>
@@ -193,10 +195,10 @@
         <li class="report-row">
           <% if (shot) { %><img src="/e/<%= token %>/<%= r.submission_id %>/<%= shot.file %>" alt="" loading="lazy"><% } else { %><span></span><% } %>
           <div class="meta">
-            <div><span class="badge <%= r.passed ? 'pass' : 'fail' %>"><%= r.passed ? 'PASS' : 'FAIL' %> · <%= passed %>/<%= r.verdicts.length %></span> <b>Attempt <%= r.attempt %></b></div>
+            <div><% if (!r.judged) { %><span class="badge s-notjudged">NOT JUDGED</span><% } else { %><span class="badge <%= r.passed ? 'pass' : 'fail' %>"><%= r.passed ? 'PASS' : 'FAIL' %> · <%= passed %>/<%= r.verdicts.length %></span><% } %> <b>Attempt <%= r.attempt %></b></div>
             <div class="small muted mono"><%= r.url %></div>
           </div>
-          <a class="btn btn-sm" href="/r/<%= token %>/<%= r.id %>">Evidence report →</a>
+          <a class="btn btn-sm" href="/r/<%= token %>/<%= r.id %>"><%= r.judged ? 'Evidence report →' : 'Details →' %></a>
         </li>
       <% }) %>
     </ul>

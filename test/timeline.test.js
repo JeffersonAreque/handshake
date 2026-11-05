@@ -23,6 +23,14 @@ test('branches: failed, voided, refunded', () => {
   assert.equal(buildTimeline('REFUNDED').outcome.kind, 'refunded');
 });
 
+test('not judged: neutral outcome, back to Funded, no red step', () => {
+  const t = buildTimeline('FUNDED', ev('DRAFT', 'FUNDED', 'SUBMITTED', 'VERIFYING', 'FUNDED'), { notJudged: true });
+  assert.deepEqual(t.steps.map((s) => s.state), ['done', 'current', 'todo', 'todo', 'todo']);
+  assert.equal(t.outcome.kind, 'notjudged');
+  assert.ok(!t.steps.some((s) => s.state === 'failed'));
+  assert.equal(buildTimeline('FUNDED', []).outcome, null);
+});
+
 test('done steps carry the time of their latest event', () => {
   const t = buildTimeline('FAILED', ev('DRAFT', 'FUNDED', 'SUBMITTED', 'VERIFYING', 'FAILED', 'SUBMITTED', 'VERIFYING', 'FAILED'));
   assert.equal(t.steps[0].at, '2026-11-05 10:01:00');

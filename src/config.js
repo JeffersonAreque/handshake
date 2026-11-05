@@ -22,8 +22,9 @@ export const config = {
   ai: {
     provider: (env.AI_PROVIDER || 'mock').trim().toLowerCase(),
     model: (env.AI_MODEL || '').trim() || undefined, // gemini default: gemini-2.5-flash
-    // Used when the main model's quota is exhausted ('none' disables it).
-    fallbackModel: env.AI_FALLBACK_MODEL === 'none' ? '' : (env.AI_FALLBACK_MODEL || '').trim() || undefined, // default gemini-2.5-flash-lite
+    // Comma-separated, tried in order when a model is out of quota or not
+    // available to the key ('none' disables). Default: gemini-3.5-flash-lite,gemini-flash-lite-latest
+    fallbackModels: env.AI_FALLBACK_MODEL === 'none' ? [] : (env.AI_FALLBACK_MODEL || '').trim() || undefined,
     apiKey: (env.GEMINI_API_KEY || '').trim(),
   },
   demo: {

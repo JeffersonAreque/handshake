@@ -42,14 +42,24 @@ const FIXES_SCHEMA = {
   required: ['fixes'],
 };
 
-/** `unavailable` = the provider failed (quota, outage), nothing was judged. */
+/**
+ * `unavailable` = the provider failed (quota, outage, model gone), so nothing
+ * was judged. `quota` = rate/quota limit. `gone` = the model can't be used
+ * with this key (404/403/400): a config problem, not transient.
+ */
 export class AiError extends Error {
-  constructor(message, { unavailable = false, quota = false } = {}) {
+  constructor(message, { unavailable = false, quota = false, gone = false } = {}) {
     super(message);
     this.unavailable = unavailable;
     this.quota = quota;
+    this.gone = gone;
   }
 }
+
+export const DEFAULT_MODEL = 'gemini-2.5-flash';
+// gemini-2.5-flash-lite is "no longer available to new users" (404), so the
+// fallbacks are its successor and Google's rolling lite alias.
+export const DEFAULT_FALLBACKS = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
 
 const retryable = (err) => /\b(429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|DEADLINE|fetch failed|timed out/i.test(String(err?.message));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -60,26 +70,65 @@ export function describeGeminiError(err) {
   const code = msg.match(/"code"\s*:\s*(\d{3})/)?.[1] ?? msg.match(/\b(4\d\d|5\d\d)\b/)?.[1];
   const status = msg.match(/RESOURCE_EXHAUSTED|UNAVAILABLE|DEADLINE_EXCEEDED|INTERNAL|PERMISSION_DENIED|INVALID_ARGUMENT|NOT_FOUND/)?.[0];
   const quota = code === '429' || status === 'RESOURCE_EXHAUSTED' || /quota/i.test(msg);
-  const unavailable = quota || /^5/.test(code ?? '') || ['UNAVAILABLE', 'DEADLINE_EXCEEDED', 'INTERNAL'].includes(status) || /timed out|fetch failed/i.test(msg);
-  const what = quota ? 'quota exceeded' : unavailable ? 'temporarily unavailable' : 'request failed';
-  return { message: `Gemini ${what}${code ? ` (HTTP ${code}${status ? ` ${status}` : ''})` : ''}`, quota, unavailable };
+  const gone = ['404', '403'].includes(code) || ['NOT_FOUND', 'PERMISSION_DENIED'].includes(status);
+  const unavailable = quota || gone || /^5/.test(code ?? '') || ['UNAVAILABLE', 'DEADLINE_EXCEEDED', 'INTERNAL'].includes(status) || /timed out|fetch failed/i.test(msg);
+  const what = quota ? 'quota exceeded' : gone ? 'model not available' : unavailable ? 'temporarily unavailable' : 'request failed';
+  return { message: `Gemini ${what}${code ? ` (HTTP ${code}${status ? ` ${status}` : ''})` : ''}`, quota, gone, unavailable };
 }
 
-export function createGemini({ apiKey, model = 'gemini-2.5-flash', fallbackModel = 'gemini-2.5-flash-lite', client, sleepFn = sleep }) {
+/**
+ * @param {object} o
+ * @param {string} [o.model]            main model
+ * @param {string[]|string} [o.fallbackModels]  tried in order when a model is out of quota or gone
+ */
+export function createGemini({ apiKey, model = DEFAULT_MODEL, fallbackModels = DEFAULT_FALLBACKS, client, sleepFn = sleep }) {
   if (!client && !apiKey) throw new AiError('GEMINI_API_KEY is not set');
   const ai = client ?? new GoogleGenAI({ apiKey });
+  const fallbacks = (typeof fallbackModels === 'string' ? fallbackModels.split(',') : fallbackModels ?? [])
+    .map((m) => m.trim()).filter((m) => m && m !== model);
+  let chain = [model, ...new Set(fallbacks)];
+  const health = {}; // model -> { ok, error, checkedAt }
 
-  /** Calls the main model; if its quota is used up, tries the fallback model once. */
+  /** Tries each model in the chain; moves on only for quota or a gone model. */
   async function generate(req) {
-    try {
-      return { data: await generateWith(model, req), model };
-    } catch (err) {
-      if (!(err instanceof AiError && err.quota) || !fallbackModel || fallbackModel === model) throw err;
-      return { data: await generateWith(fallbackModel, req), model: fallbackModel };
+    let lastErr;
+    for (const m of chain) {
+      try {
+        return { data: await generateWith(m, req), model: m };
+      } catch (err) {
+        lastErr = err;
+        if (err instanceof AiError && err.gone) {
+          health[m] = { ok: false, error: err.message, gone: true, checkedAt: new Date().toISOString() };
+          if (chain.length > 1) chain = chain.filter((x) => x !== m); // don't waste calls on it again
+        }
+        if (!(err instanceof AiError && (err.quota || err.gone))) throw err;
+      }
     }
+    throw lastErr;
   }
 
-  async function generateWith(model, { system, parts, schema, temperature = 0 }) {
+  /**
+   * Startup check: one tiny generateContent per model. The models list can't
+   * be trusted (it lists models that answer 404), so this calls each one.
+   * Models that are gone are dropped from the chain; quota/outage keeps them.
+   */
+  async function checkModels() {
+    for (const m of [model, ...fallbacks]) {
+      try {
+        await generateWith(m, { system: 'Health check.', parts: [{ text: 'Return {"ok": true}.' }], schema: { type: Type.OBJECT, properties: { ok: { type: Type.BOOLEAN } }, required: ['ok'] } }, { retries: 0 });
+        health[m] = { ok: true, checkedAt: new Date().toISOString() };
+      } catch (err) {
+        health[m] = { ok: false, error: err.message, gone: Boolean(err.gone), checkedAt: new Date().toISOString() };
+      }
+    }
+    const usable = [model, ...fallbacks].filter((m) => !health[m]?.gone);
+    if (usable.length) chain = usable;
+    return status();
+  }
+
+  const status = () => ({ chain: [...chain], health: { ...health } });
+
+  async function generateWith(model, { system, parts, schema, temperature = 0 }, { retries = RETRY_DELAYS_MS.length } = {}) {
     for (let attempt = 0; ; attempt++) {
       let timer;
       try {
@@ -97,7 +146,7 @@ export function createGemini({ apiKey, model = 'gemini-2.5-flash', fallbackModel
         if (err instanceof AiError && !err.unavailable && /invalid JSON/.test(err.message)) throw err;
         const info = describeGeminiError(err);
         // A used-up quota won't recover in seconds: don't retry it.
-        if (!info.quota && attempt < RETRY_DELAYS_MS.length && retryable(err)) { await sleepFn(RETRY_DELAYS_MS[attempt]); continue; }
+        if (!info.quota && !info.gone && attempt < retries && retryable(err)) { await sleepFn(RETRY_DELAYS_MS[attempt]); continue; }
         throw new AiError(info.message, info);
       } finally {
         clearTimeout(timer);
@@ -108,6 +157,8 @@ export function createGemini({ apiKey, model = 'gemini-2.5-flash', fallbackModel
   return {
     provider: 'gemini',
     model,
+    checkModels,
+    status,
     judge: ({ criteria, checks, images }) =>
       generate({
         system: JUDGE_SYSTEM,

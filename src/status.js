@@ -22,7 +22,9 @@ export const TRANSITIONS = Object.freeze({
   [S.DRAFT]: [S.FUNDED],
   [S.FUNDED]: [S.SUBMITTED, S.VOIDED],
   [S.SUBMITTED]: [S.VERIFYING],
-  [S.VERIFYING]: [S.PASSED, S.FAILED],
+  // VERIFYING → FUNDED: the AI was unavailable, so the attempt was not
+  // judged; the money stays held and the freelancer resubmits.
+  [S.VERIFYING]: [S.PASSED, S.FAILED, S.FUNDED],
   [S.PASSED]: [S.PAID],
   [S.FAILED]: [S.SUBMITTED, S.VOIDED],
   [S.PAID]: [S.REFUNDED],

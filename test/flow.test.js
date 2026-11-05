@@ -238,15 +238,34 @@ test('AI outage: attempt is not judged, freelancer is told plainly and can resub
   await db.execute({ sql: "UPDATE milestones SET status = 'SUBMITTED' WHERE id = ?", args: [m.id] });
   const s = await db.execute({ sql: "INSERT INTO submissions (milestone_id, url, attempt) VALUES (?, 'https://93.184.216.34/', 1)", args: [m.id] });
   await down.enqueue(m.id, Number(s.lastInsertRowid));
-  assert.equal((await getMilestone(db, m.id)).status, 'FAILED');
+  // Not a failure: back to FUNDED, money still held, nothing captured.
+  assert.equal((await getMilestone(db, m.id)).status, 'FUNDED');
   assert.equal(fixCalls, 0, 'no fix list for an attempt that was not judged');
-  assert.ok(!paypal.calls.some((c) => c[0] === 'capture'));
-  const page = await (await fetch(`${base}/f/${m.freelancer_token}`)).text();
-  assert.match(page, /wasn’t judged/);
-  assert.match(page, /quota exceeded/);
-  assert.doesNotMatch(page, /\{&#34;error/);
-  // The freelancer can resubmit right away.
+  assert.ok(!paypal.calls.some((c) => c[0] === 'capture' || c[0] === 'void'));
+  const [report] = toRows(await db.execute({ sql: 'SELECT judged, passed FROM reports WHERE milestone_id = ?', args: [m.id] }));
+  assert.deepEqual([report.judged, report.passed], [0, 0]);
+
+  for (const token of [m.freelancer_token, m.client_token]) {
+    const page = await (await fetch(`${base}/${token === m.client_token ? 'c' : 'f'}/${token}`)).text();
+    assert.match(page, /id="status-badge">Not judged, please resubmit</);
+    assert.match(page, /NOT JUDGED/);
+    assert.match(page, /class="outcome notjudged"/);
+    assert.doesNotMatch(page, /Changes needed/);
+    assert.doesNotMatch(page, /FAIL · /);
+    assert.doesNotMatch(page, /<li class="failed"/, 'no red timeline step');
+    assert.doesNotMatch(page, /\{&#34;error/);
+  }
+  const fpage = await (await fetch(`${base}/f/${m.freelancer_token}`)).text();
+  assert.match(fpage, /quota exceeded/);
+  assert.match(fpage, />Resubmit</);
+  const reportHtml = await (await fetch(base + fpage.match(/href="(\/r\/[^"]+)"/)[1])).text();
+  assert.match(reportHtml, /Not judged, please resubmit/);
+  assert.doesNotMatch(reportHtml, /Changes needed|0\/1|✕/);
+
+  // The freelancer resubmits right away, and a judged attempt then works normally.
   assert.equal((await form(`/f/${m.freelancer_token}/submit`, { url: 'https://93.184.216.34/' })).status, 303);
+  await ctx.verifier.idle();
+  assert.equal((await getMilestone(db, m.id)).status, 'PAID');
 });
 
 test('fail → resubmit → client voids; nothing is captured', async (t) => {

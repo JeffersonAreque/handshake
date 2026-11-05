@@ -88,6 +88,8 @@ const MIGRATIONS = [
   "ALTER TABLE milestones ADD COLUMN funding TEXT NOT NULL DEFAULT 'paypal'",
   // null for real milestones; 'try' (created by a demo button) or 'showcase' (seeded, read-only)
   'ALTER TABLE milestones ADD COLUMN demo_kind TEXT',
+  // 0 when the AI verifier was unavailable and nothing was judged
+  'ALTER TABLE reports ADD COLUMN judged INTEGER NOT NULL DEFAULT 1',
 ];
 
 /** Converts a libsql result to plain row objects. */
@@ -101,6 +103,7 @@ const parseReport = (row) =>
   row && {
     ...row,
     passed: Boolean(row.passed),
+    judged: row.judged === undefined || row.judged === null ? true : Boolean(row.judged),
     id: Number(row.id),
     verdicts: JSON.parse(row.verdicts),
     checks: JSON.parse(row.checks),
@@ -166,9 +169,9 @@ export async function addReport(db, r) {
         q('INSERT OR REPLACE INTO screenshots (submission_id, label, mime, data) VALUES (?, ?, ?, ?)', [r.submissionId, img.label, img.mime ?? 'image/jpeg', img.data])
       ),
       q(
-        `INSERT INTO reports (submission_id, milestone_id, passed, verdicts, checks, screenshots, model, error, fixes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [r.submissionId, r.milestoneId, r.passed ? 1 : 0, JSON.stringify(r.verdicts), JSON.stringify(r.checks), JSON.stringify(r.screenshots), r.model, r.error ?? null, JSON.stringify(r.fixes ?? [])]
+        `INSERT INTO reports (submission_id, milestone_id, passed, verdicts, checks, screenshots, model, error, fixes, judged)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [r.submissionId, r.milestoneId, r.passed ? 1 : 0, JSON.stringify(r.verdicts), JSON.stringify(r.checks), JSON.stringify(r.screenshots), r.model, r.error ?? null, JSON.stringify(r.fixes ?? []), r.judged === false ? 0 : 1]
       ),
     ],
     'write'

@@ -59,10 +59,17 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
           try {
             judged = await ai.judge({ criteria: m.criteria, checks, images });
           } catch (err) {
-            // The AI provider failed (quota, outage): nothing was judged.
-            // Keep the evidence and say so plainly, without blaming the work.
-            const msg = `The AI verifier was unavailable (${err.message}), so this attempt was not judged. Please resubmit in a few minutes.`;
-            return { checks, images, verdicts: m.criteria.map((criterion) => ({ criterion, pass: false, reason: 'Not judged: the AI verifier was unavailable.', evidence: [] })), error: msg, model: ai.model };
+            // The AI provider failed (quota, outage, model gone): nothing was
+            // judged. Keep the evidence; don't blame the work.
+            log.error(`[verify] milestone ${m.id}: not judged: ${err.message}`);
+            return {
+              checks,
+              images,
+              verdicts: m.criteria.map((criterion) => ({ criterion, pass: false, reason: 'Not judged: the AI verifier was unavailable.', evidence: [] })),
+              error: `The AI verifier was unavailable (${err.message}), so this attempt was not judged. Please resubmit in a few minutes.`,
+              model: ai.model,
+              notJudged: true,
+            };
           }
           return { checks, images, verdicts: judged.verdicts, model: judged.model, error: null };
         })(),
@@ -77,7 +84,8 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
         error: err.message,
       };
     }
-    const passed = report.verdicts.length > 0 && report.verdicts.every((v) => v.pass === true);
+    const notJudged = report.notJudged === true;
+    const passed = !notJudged && report.verdicts.length > 0 && report.verdicts.every((v) => v.pass === true);
     let fixes = [];
     if (!passed && !report.error) {
       step('Writing a fix list for the freelancer…');
@@ -91,6 +99,7 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
       submissionId: submission.id,
       milestoneId: m.id,
       passed,
+      judged: !notJudged,
       fixes,
       model: report.model ?? ai.model,
       checks: report.checks,
@@ -100,15 +109,15 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
       screenshots: report.images.map((img) => ({ label: img.label, file: `${img.label}.jpg` })),
     });
 
-    if (passed) {
+    if (notJudged) {
+      // Back to FUNDED: the hold stays, the freelancer just resubmits.
+      await transition(db, m.id, STATUS.FUNDED, {}, `Not judged (AI verifier unavailable); please resubmit`);
+    } else if (passed) {
       await transition(db, m.id, STATUS.PASSED, { last_error: null }, 'All criteria passed');
       await payout(m.id);
     } else {
       const failed = report.verdicts.filter((v) => !v.pass).length;
-      const note = report.error
-        ? (report.error.startsWith('The AI verifier was unavailable') ? 'Not judged: the AI verifier was unavailable; resubmit' : report.error)
-        : `${failed} of ${report.verdicts.length} criteria failed`;
-      await transition(db, m.id, STATUS.FAILED, {}, note);
+      await transition(db, m.id, STATUS.FAILED, {}, report.error ?? `${failed} of ${report.verdicts.length} criteria failed`);
     }
   }
 

@@ -117,23 +117,60 @@ test('gemini: retries on 503, then gives up with a clean error', async () => {
 
 const QUOTA_ERROR = '{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details. https://ai.google.dev/x","status":"RESOURCE_EXHAUSTED"}}';
 
-test('gemini: quota exhausted → no retries, falls back to the lite model once', async () => {
-  const client = fakeClient([new Error(QUOTA_ERROR), { verdicts: [{ index: 0, pass: true, reason: 'ok', evidence: ['desktop.jpg'] }] }]);
+// The exact error Gemini returns for the retired model on this key.
+const GONE_ERROR = '{"error":{"code":404,"message":"This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the latest features and improvements.","status":"NOT_FOUND"}}';
+const okVerdict = { verdicts: [{ index: 0, pass: true, reason: 'ok', evidence: ['desktop.jpg'] }] };
+
+test('default models: main 2.5-flash; fallbacks are not the retired 2.5-flash-lite', () => {
+  const g = createGemini({ apiKey: 'k', client: { models: {} } });
+  assert.deepEqual(g.status().chain, ['gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest']);
+  assert.ok(!g.status().chain.includes('gemini-2.5-flash-lite'));
+});
+
+test('gemini: quota exhausted → no retries, falls back to the next model', async () => {
+  const client = fakeClient([new Error(QUOTA_ERROR), okVerdict]);
   const ai = createAi({ provider: 'gemini', apiKey: 'k', client });
   const { verdicts, model } = await ai.judge({ criteria: ['x'], checks: okChecks, images: [] });
   assert.equal(verdicts[0].pass, true);
-  assert.equal(model, 'gemini-2.5-flash-lite');
-  assert.deepEqual(client.calls.map((c) => c.model), ['gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+  assert.equal(model, 'gemini-3.5-flash-lite');
+  assert.deepEqual(client.calls.map((c) => c.model), ['gemini-2.5-flash', 'gemini-3.5-flash-lite']);
 
-  const both = fakeClient([new Error(QUOTA_ERROR), new Error(QUOTA_ERROR)]);
-  await assert.rejects(createAi({ provider: 'gemini', apiKey: 'k', client: both }).judge({ criteria: ['x'], checks: okChecks }), (err) => {
+  const all = fakeClient([new Error(QUOTA_ERROR), new Error(QUOTA_ERROR), new Error(QUOTA_ERROR)]);
+  await assert.rejects(createAi({ provider: 'gemini', apiKey: 'k', client: all }).judge({ criteria: ['x'], checks: okChecks }), (err) => {
     assert.equal(err.message, 'Gemini quota exceeded (HTTP 429 RESOURCE_EXHAUSTED)');
     assert.ok(err.quota && err.unavailable);
     return true;
   });
   const none = fakeClient([new Error(QUOTA_ERROR)]);
-  await assert.rejects(createAi({ provider: 'gemini', apiKey: 'k', client: none, fallbackModel: '' }).judge({ criteria: ['x'], checks: okChecks }), AiError);
+  await assert.rejects(createAi({ provider: 'gemini', apiKey: 'k', client: none, fallbackModels: [] }).judge({ criteria: ['x'], checks: okChecks }), AiError);
   assert.equal(none.calls.length, 1);
+});
+
+test('gemini: a model that is gone (404) is skipped, reported clearly and dropped from the chain', async () => {
+  // The production bug: main out of quota, fallback 404 → the user saw "request failed (HTTP 404)".
+  const client = fakeClient([new Error(QUOTA_ERROR), new Error(GONE_ERROR), okVerdict, okVerdict]);
+  const ai = createAi({ provider: 'gemini', apiKey: 'k', client, fallbackModels: ['gemini-2.5-flash-lite', 'gemini-3.5-flash-lite'] });
+  const first = await ai.judge({ criteria: ['x'], checks: okChecks });
+  assert.equal(first.model, 'gemini-3.5-flash-lite');
+  assert.deepEqual(ai.status().chain, ['gemini-2.5-flash', 'gemini-3.5-flash-lite']);
+  assert.equal(ai.status().health['gemini-2.5-flash-lite'].error, 'Gemini model not available (HTTP 404 NOT_FOUND)');
+  await ai.judge({ criteria: ['x'], checks: okChecks });
+  assert.ok(!client.calls.slice(3).some((c) => c.model === 'gemini-2.5-flash-lite'), 'not called again');
+
+  const err = await createGemini({ apiKey: 'k', client: fakeClient([new Error(GONE_ERROR)]), fallbackModels: [] }).judge({ criteria: ['x'], checks: okChecks, images: [] }).catch((e) => e);
+  assert.ok(err.gone && err.unavailable && !err.quota);
+});
+
+test('startup check: probes every model, drops gone ones, keeps quota-limited ones', async () => {
+  const client = fakeClient([{ ok: true }, new Error(GONE_ERROR), new Error(QUOTA_ERROR)]);
+  const ai = createAi({ provider: 'gemini', apiKey: 'k', client, fallbackModels: ['gemini-2.5-flash-lite', 'gemini-flash-lite-latest'] });
+  const { chain, health } = await ai.checkModels();
+  assert.deepEqual(client.calls.map((c) => c.model), ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
+  assert.equal(health['gemini-2.5-flash'].ok, true);
+  assert.equal(health['gemini-2.5-flash-lite'].gone, true);
+  assert.equal(health['gemini-flash-lite-latest'].ok, false);
+  assert.deepEqual(chain, ['gemini-2.5-flash', 'gemini-flash-lite-latest']);
+  assert.deepEqual(await createAi({ provider: 'mock' }).checkModels(), { chain: ['mock'], health: {} });
 });
 
 test('mock provider drafts criteria and fix lists', async () => {

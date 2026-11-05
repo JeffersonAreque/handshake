@@ -20,6 +20,14 @@ const app = createApp({ db, paypal, money, verifier, ai, config });
 app.listen(config.port, async () => {
   console.log(`Handshake listening on ${config.port} (node ${process.version})`, { ...describeConfig(), aiModel: ai.model });
   try {
+    // Which AI models actually answer with this key (also on /healthz).
+    const { chain, health } = await ai.checkModels();
+    for (const [model, h] of Object.entries(health)) {
+      console[h.ok ? 'log' : 'warn'](`[ai] ${model}: ${h.ok ? 'reachable' : `NOT reachable: ${h.error}${h.gone ? ' (removed from the chain)' : ''}`}`);
+    }
+    console.log(`[ai] model chain: ${chain.join(' → ')}`);
+    if (!Object.values(health).some((h) => h.ok) && ai.provider !== 'mock') console.error('[ai] WARNING: no configured model is reachable right now');
+
     await verifier.recover();
     startDemoCleanup(db);
     // The showcase verifies the bundled demo sites over the public URL, so

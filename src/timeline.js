@@ -12,15 +12,17 @@ const ORDER = ['DRAFT', 'FUNDED', 'SUBMITTED', 'VERIFYING', 'PASSED', 'PAID'];
 /**
  * @param {string} status   current milestone status
  * @param {{status: string, created_at: string}[]} events
+ * @param {{notJudged?: boolean}} [opts] the latest attempt was not judged (AI unavailable)
  * @returns {{steps: {key,label,hint,state,at}[], outcome: null|{kind,label}}}
  *   state: done | current | active | failed | todo | skipped
  */
-export function buildTimeline(status, events = []) {
+export function buildTimeline(status, events = [], { notJudged = false } = {}) {
   const lastAt = (key) => [...events].reverse().find((e) => e.status === key)?.created_at ?? null;
   const reached = new Set(events.map((e) => e.status));
   let pos = ORDER.indexOf(status); // index of the current status in the happy path
   let outcome = null;
 
+  if (status === 'FUNDED' && notJudged) outcome = { kind: 'notjudged', label: 'Not judged: the AI verifier was unavailable, so nothing was decided. Please resubmit.' };
   if (status === 'FAILED') { pos = ORDER.indexOf('VERIFYING'); outcome = { kind: 'failed', label: 'Changes needed: the freelancer can fix and resubmit' }; }
   if (status === 'REFUNDED') { pos = ORDER.indexOf('PAID'); outcome = { kind: 'refunded', label: 'Refunded to the client' }; }
   if (status === 'VOIDED') {
