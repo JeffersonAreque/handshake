@@ -6,6 +6,7 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
-    "spike": "node --env-file-if-exists=.env scripts/paypal-spike.mjs"
+    "spike": "node --env-file-if-exists=.env scripts/paypal-spike.mjs",
+    "test": "node --test"
   }
 }

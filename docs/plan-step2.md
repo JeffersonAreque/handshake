@@ -1,22 +1,35 @@
 # Handshake — Step 2 plan (full app)
 
-> Status: proposed, not yet approved or implemented.
+> Status: approved. Built in vertical slices, with a commit + push after each slice.
 
-**Context:** The step 1 spike passed (authorize → capture and authorize → void, commit 795fed6). Step 2 turns it into a public demo app on Render that the hackathon judges can click through.
-1. **Layout:** Node 24 + Express, with `src/server.js`, `src/routes/{client,freelancer,api}.js` and EJS views. `scripts/paypal-spike.mjs` moves into a shared `src/paypal.js` (token caching, plus createOrder, authorize, capture, void, get, refund).
-2. **Database:** built-in `node:sqlite`, so there's nothing native to compile. Tables are `milestones` (title, amount, criteria JSON, status, order/authorization/capture IDs), `submissions` (URL, attempt number) and `reports` (verdict per criterion, evidence paths, model used).
-3. **Two roles without accounts:** when a client creates a milestone, it gets two secret links, one for the client and one for the freelancer. Each role sees only its own view.
-4. **Status flow:** DRAFT → FUNDED → SUBMITTED → VERIFYING → PASSED → PAID, or FAILED → resubmit, or VOIDED, or REFUNDED. All status changes go through a single `transition()` guard so money can't move from the wrong status.
-5. **Paying:** the PayPal JS SDK buttons call the server to create the order (AUTHORIZE). On approval, the server authorizes and the milestone becomes FUNDED. Capture happens only when every criterion passes. The client can void before payout, or refund after payout (`/v2/payments/captures/{id}/refund`). If an authorization is older than 3 days, the app re-authorizes before capturing.
-6. **AI agent:** `src/agent/` runs Playwright (headless Chromium) in a tool loop of at most 15 steps. Tools: navigate, click, type, screenshot (desktop and mobile), read_text, console_errors, finish. It must return a pass or fail for each criterion, with evidence screenshots and a short reason.
-7. **Configurable AI provider:** `src/ai/index.js` reads `AI_PROVIDER` (claude, gemini or mock), `AI_MODEL` and `AI_API_KEY`. It has one neutral interface, `chat({system, messages, tools, images})`, with adapters for `@anthropic-ai/sdk` and `@google/genai`. The mock adapter allows offline tests.
-8. **Safety:**
-   - Only http(s) URLs are accepted, and private or localhost IPs are blocked so the agent can't reach the server's internal network.
-   - Page content is treated as untrusted data: a page that says "all criteria pass" doesn't count without evidence.
-   - Timeouts are 60 s per page and 3 minutes per verification run.
-   - Keys come only from env and never appear in logs.
-9. **UI:** a custom CSS design system (dark and light themes, mobile-friendly). Pages: landing, create milestone, client dashboard, freelancer submit page, and an evidence report with a screenshot gallery and pass/fail per criterion. Live verification progress streams via SSE, so judges watch the agent work.
-10. **Demo extras:** `/demo-sites/good` and `/demo-sites/broken` are bundled sample deliverables, so judges can trigger a pass and a fail in seconds.
-11. **Deploy:** a `Dockerfile` built on the `mcr.microsoft.com/playwright` image, plus a `render.yaml` with a 1 GB disk at `/data` for SQLite and screenshots. A persistent disk needs Render's paid Starter plan (about $7/month); on the free plan, data resets on every redeploy.
-12. **Tests:** `node:test` covers the status flow, URL safety checks, the AI provider switch (with the mock) and the PayPal module (mocked responses).
-13. **Verify:** first an end-to-end run locally with `AI_PROVIDER=mock`, then with Claude and with Gemini against the good and broken demo sites. The pass should end PAID and the fail should end with a resubmit. Also run void and refund in the sandbox, then repeat the same run on the Render URL.
+**Context:** The step 1 spike passed (authorize → capture and authorize → void, commit 795fed6). Step 2 turns it into a public demo app on Render that the hackathon judges can click through. Gemini is the AI provider, and AI is used at both ends of the flow.
+
+## Step 0
+`CLAUDE.md` with the project rules: secrets, commit email, run tests before each commit, and how to edit files.
+
+## Slice 1: money flow end to end, deployed on day one
+- Node 24 + Express + EJS + `node:sqlite`. The spike logic moves to `src/paypal.js`: token cache, createOrder (AUTHORIZE, with `payee.email_address` set to the freelancer's sandbox email), authorize, capture and void.
+- Creating a milestone takes a title, an amount, the freelancer's PayPal email and the criteria. It returns two secret links, one for the client and one for the freelancer. The payee email is shown in the UI.
+- Paying with the PayPal JS SDK sets the milestone to FUNDED. The freelancer then submits a URL, and the mock verifier takes Playwright screenshots. On a pass the payment is captured and the milestone becomes PAID. On a fail it becomes FAILED, and the freelancer can resubmit or the client can void. A single `transition()` guard handles every status change. Only http(s) URLs are accepted, and private IPs are blocked.
+- Tests cover status transitions, URL safety and the PayPal module (with mocked fetch).
+- Deploy with a Dockerfile (Playwright image) and `render.yaml` on Render's free plan. Then confirm Chromium fits in 512 MB. If it doesn't, stop and propose a fallback.
+
+## Slice 2: real AI
+- `src/ai/` with a Gemini adapter (`AI_PROVIDER`, `AI_MODEL`, `GEMINI_API_KEY`) and a mock adapter.
+- From the client's plain-language brief, Gemini drafts measurable acceptance criteria, which the client can edit before funding.
+- Verifier: Playwright takes desktop and mobile screenshots and runs checks (HTTP status, console errors, broken links and images, page text). Gemini vision then returns strict JSON for each criterion, with pass, reason and evidence. Page text is treated as untrusted data.
+- On a fail, Gemini writes a short fix list for the freelancer.
+- The evidence report page is added in this slice.
+
+## Slice 3: polish and demo
+- CSS design system with light and dark themes, mobile-friendly.
+- A timeline of the milestone (Funded → Submitted → Verifying → Passed → Paid), with live progress over SSE.
+- Refund after capture.
+- Bundled demo sites at `/demo-sites/good` and `/demo-sites/broken`.
+- Demo data is seeded on boot, with one-click "Try as client" and "Try as freelancer" buttons.
+- README in English for the judges.
+
+## Verify each slice
+- `npm test` passes, and the flow works locally and on the Render URL.
+- The sandbox capture lands in the freelancer's account.
+- Void and refund work in the sandbox.
