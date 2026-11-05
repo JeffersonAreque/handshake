@@ -20,7 +20,9 @@ export const config = {
     currency: 'USD',
   },
   ai: {
-    provider: (env.AI_PROVIDER || 'mock').toLowerCase(),
+    provider: (env.AI_PROVIDER || 'mock').trim().toLowerCase(),
+    model: (env.AI_MODEL || '').trim() || undefined, // gemini default: gemini-2.5-flash
+    apiKey: (env.GEMINI_API_KEY || '').trim(),
   },
   // Local development only: lets the verifier open localhost / private URLs.
   allowPrivateUrls: env.ALLOW_PRIVATE_URLS === 'true',
@@ -34,6 +36,8 @@ export function describeConfig() {
     paypalApi: config.paypal.apiBase,
     paypalConfigured: Boolean(config.paypal.clientId && config.paypal.clientSecret),
     aiProvider: config.ai.provider,
+    aiModel: config.ai.model ?? 'default',
+    geminiKeySet: Boolean(config.ai.apiKey),
     allowPrivateUrls: config.allowPrivateUrls,
   };
 }

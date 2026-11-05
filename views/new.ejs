@@ -19,9 +19,37 @@
       <small class="muted">Use a PayPal <b>sandbox business</b> account email. Captured funds go here.</small>
     </label>
   </div>
-  <label>Acceptance criteria <span class="muted">(one per line)</span>
-    <textarea name="criteria" rows="5" required placeholder="The page shows the bakery name and a hero image&#10;There is a contact form with name, email and message&#10;The layout works on mobile with no horizontal scrolling"><%= form.criteria || '' %></textarea>
+  <label>Brief <span class="muted">(plain language: what you want delivered)</span>
+    <textarea id="brief" name="brief" rows="3" maxlength="2000" placeholder="A one-page website for my bakery 'Pan de Casa' with our opening hours, a photo of our bread, a menu with prices and a contact form."><%= form.brief || '' %></textarea>
+  </label>
+  <div class="draft-row">
+    <button class="btn" type="button" id="draft-btn">✨ Draft criteria with AI</button>
+    <span id="draft-msg" class="muted" role="status"></span>
+  </div>
+  <label>Acceptance criteria <span class="muted">(one per line, edit freely; these are what the verifier checks)</span>
+    <textarea id="criteria" name="criteria" rows="6" required placeholder="The page shows the bakery name and a hero image&#10;There is a contact form with name, email and message&#10;The layout works on mobile with no horizontal scrolling"><%= form.criteria || '' %></textarea>
   </label>
   <button class="btn primary" type="submit">Create milestone</button>
 </form>
+<script>
+  (function () {
+    const btn = document.getElementById('draft-btn');
+    const msg = document.getElementById('draft-msg');
+    const brief = document.getElementById('brief');
+    const criteria = document.getElementById('criteria');
+    btn.addEventListener('click', async () => {
+      if (brief.value.trim().length < 15) { msg.textContent = 'Write a sentence or two in the brief first.'; brief.focus(); return; }
+      if (criteria.value.trim() && !confirm('Replace the current criteria with an AI draft?')) return;
+      btn.disabled = true; msg.textContent = 'Drafting…';
+      try {
+        const r = await fetch('/api/draft-criteria', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brief: brief.value }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || 'Could not draft criteria.');
+        criteria.value = d.criteria.join('\n');
+        msg.textContent = 'Drafted by ' + d.model + '. Review and edit before creating the milestone.';
+        criteria.focus();
+      } catch (e) { msg.textContent = e.message; } finally { btn.disabled = false; }
+    });
+  })();
+</script>
 <%- include('partials/foot') %>

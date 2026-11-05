@@ -14,7 +14,7 @@ function withTimeout(promise, ms, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
-export function createVerifier({ db, paypal, judge, capture, allowPrivate = false, log = console }) {
+export function createVerifier({ db, paypal, ai, capture, allowPrivate = false, log = console }) {
   let chain = Promise.resolve();
 
   /** Capture the authorized payment to the freelancer. Safe to retry. */
@@ -43,7 +43,7 @@ export function createVerifier({ db, paypal, judge, capture, allowPrivate = fals
       report = await withTimeout(
         (async () => {
           const { checks, images } = await trackMemory(`verify ${m.id}/${submission.id}`, () => capture(submission.url, { allowPrivate }));
-          const verdicts = await judge.judge({ criteria: m.criteria, checks, images, milestone: m });
+          const verdicts = await ai.judge({ criteria: m.criteria, checks, images });
           return { checks, images, verdicts, error: null };
         })(),
         RUN_TIMEOUT_MS,
@@ -58,11 +58,20 @@ export function createVerifier({ db, paypal, judge, capture, allowPrivate = fals
       };
     }
     const passed = report.verdicts.length > 0 && report.verdicts.every((v) => v.pass === true);
+    let fixes = [];
+    if (!passed && !report.error) {
+      try {
+        fixes = await ai.fixList({ criteria: m.criteria, verdicts: report.verdicts, checks: report.checks });
+      } catch (err) {
+        log.error(`[fixes] milestone ${m.id}: ${err.message}`);
+      }
+    }
     await store.addReport(db, {
       submissionId: submission.id,
       milestoneId: m.id,
       passed,
-      model: judge.model,
+      fixes,
+      model: ai.model,
       checks: report.checks,
       verdicts: report.verdicts,
       error: report.error,

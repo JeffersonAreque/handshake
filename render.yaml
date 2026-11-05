@@ -18,5 +18,13 @@ services:
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
+      # Set these manually in the Render dashboard. Add GEMINI_API_KEY first,
+      # then AI_PROVIDER=gemini: with AI_PROVIDER=gemini and no key the
+      # server refuses to start (it never falls back to the mock silently).
+      - key: GEMINI_API_KEY
+        sync: false
       - key: AI_PROVIDER
-        value: mock
+        sync: false
+      # Optional, defaults to gemini-2.5-flash
+      - key: AI_MODEL
+        sync: false

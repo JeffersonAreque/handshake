@@ -74,8 +74,17 @@ export async function openDb({ url, authToken } = {}) {
   const db = createClient({ url, ...(authToken && { authToken }) });
   if (!url?.startsWith('libsql:') && !url?.startsWith('https:')) await db.execute('PRAGMA foreign_keys = ON');
   await db.executeMultiple(SCHEMA);
+  for (const sql of MIGRATIONS) {
+    try { await db.execute(sql); } catch (err) { if (!/duplicate column/i.test(err.message)) throw err; }
+  }
   return db;
 }
+
+// Additive column migrations for databases created by earlier versions.
+const MIGRATIONS = [
+  'ALTER TABLE reports ADD COLUMN fixes TEXT',
+  'ALTER TABLE milestones ADD COLUMN brief TEXT',
+];
 
 /** Converts a libsql result to plain row objects. */
 export const toRows = (result) =>
@@ -88,18 +97,20 @@ const parseReport = (row) =>
   row && {
     ...row,
     passed: Boolean(row.passed),
+    id: Number(row.id),
     verdicts: JSON.parse(row.verdicts),
     checks: JSON.parse(row.checks),
     screenshots: JSON.parse(row.screenshots),
+    fixes: row.fixes ? JSON.parse(row.fixes) : [],
   };
 
 export async function createMilestone(db, m) {
   const [ins] = await db.batch(
     [
       q(
-        `INSERT INTO milestones (client_token, freelancer_token, title, description, amount, currency, payee_email, criteria, is_demo)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [m.clientToken, m.freelancerToken, m.title, m.description ?? '', m.amount, m.currency ?? 'USD', m.payeeEmail, JSON.stringify(m.criteria), m.isDemo ? 1 : 0]
+        `INSERT INTO milestones (client_token, freelancer_token, title, description, amount, currency, payee_email, criteria, is_demo, brief)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [m.clientToken, m.freelancerToken, m.title, m.description ?? '', m.amount, m.currency ?? 'USD', m.payeeEmail, JSON.stringify(m.criteria), m.isDemo ? 1 : 0, m.brief || null]
       ),
       q("INSERT INTO events (milestone_id, status, note) VALUES (last_insert_rowid(), 'DRAFT', 'Milestone created')"),
     ],
@@ -151,9 +162,9 @@ export async function addReport(db, r) {
         q('INSERT OR REPLACE INTO screenshots (submission_id, label, mime, data) VALUES (?, ?, ?, ?)', [r.submissionId, img.label, img.mime ?? 'image/jpeg', img.data])
       ),
       q(
-        `INSERT INTO reports (submission_id, milestone_id, passed, verdicts, checks, screenshots, model, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [r.submissionId, r.milestoneId, r.passed ? 1 : 0, JSON.stringify(r.verdicts), JSON.stringify(r.checks), JSON.stringify(r.screenshots), r.model, r.error ?? null]
+        `INSERT INTO reports (submission_id, milestone_id, passed, verdicts, checks, screenshots, model, error, fixes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [r.submissionId, r.milestoneId, r.passed ? 1 : 0, JSON.stringify(r.verdicts), JSON.stringify(r.checks), JSON.stringify(r.screenshots), r.model, r.error ?? null, JSON.stringify(r.fixes ?? [])]
       ),
     ],
     'write'
@@ -188,6 +199,19 @@ export async function getMilestoneView(db, milestoneId) {
     'read'
   );
   return { reports: toRows(reports).map(parseReport), events: toRows(events), submission: first(submission) };
+}
+
+export async function getReport(db, milestoneId, reportId) {
+  const row = first(
+    await db.execute(
+      q(
+        `SELECT r.*, s.url, s.attempt FROM reports r JOIN submissions s ON s.id = r.submission_id
+         WHERE r.id = ? AND r.milestone_id = ?`,
+        [reportId, milestoneId]
+      )
+    )
+  );
+  return parseReport(row);
 }
 
 export const listEvents = async (db, milestoneId) =>

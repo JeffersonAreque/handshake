@@ -13,6 +13,7 @@ export function validateMilestoneInput(body) {
   const errors = [];
   const title = String(body.title ?? '').trim();
   const description = String(body.description ?? '').trim();
+  const brief = String(body.brief ?? '').trim();
   const payeeEmail = String(body.payeeEmail ?? '').trim();
   const amountNum = Number(String(body.amount ?? '').trim());
   const criteria = String(body.criteria ?? '')
@@ -21,16 +22,32 @@ export function validateMilestoneInput(body) {
     .filter(Boolean);
   if (title.length < 3 || title.length > 120) errors.push('Title must be 3–120 characters.');
   if (description.length > 2000) errors.push('Description is too long.');
+  if (brief.length > 2000) errors.push('The brief is too long (2,000 characters max).');
   if (!EMAIL_RE.test(payeeEmail)) errors.push('Enter the freelancer’s PayPal email.');
   if (!Number.isFinite(amountNum) || amountNum < 1 || amountNum > 10000) errors.push('Amount must be between 1 and 10,000 USD.');
   if (criteria.length < 1 || criteria.length > 10) errors.push('Add 1–10 acceptance criteria, one per line.');
   if (criteria.some((c) => c.length > 300)) errors.push('Each criterion must be under 300 characters.');
-  return { errors, value: { title, description, payeeEmail, amount: amountNum.toFixed(2), criteria } };
+  return { errors, value: { title, description, brief, payeeEmail, amount: amountNum.toFixed(2), criteria } };
 }
 
-export function createApp({ db, paypal, verifier, config }) {
+/** Fixed-window limiter per key (in memory; one instance is enough here). */
+export function rateLimiter({ limit, windowMs }) {
+  const hits = new Map();
+  return (key) => {
+    const now = Date.now();
+    const entry = hits.get(key);
+    if (!entry || now > entry.reset) { hits.set(key, { n: 1, reset: now + windowMs }); return true; }
+    entry.n += 1;
+    if (hits.size > 5000) for (const [k, v] of hits) if (now > v.reset) hits.delete(k);
+    return entry.n <= limit;
+  };
+}
+
+export function createApp({ db, paypal, verifier, ai, config }) {
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', 1); // Render terminates TLS in front of us
+  const draftLimit = rateLimiter({ limit: 8, windowMs: 10 * 60_000 });
   app.set('view engine', 'ejs');
   app.set('views', path.resolve('views'));
   app.use((req, res, next) => {
@@ -42,6 +59,8 @@ export function createApp({ db, paypal, verifier, config }) {
   app.use(express.urlencoded({ extended: false, limit: '20kb' }));
   app.use(express.json({ limit: '20kb' }));
   app.locals.baseUrl = config.baseUrl;
+  app.locals.aiProvider = ai.provider;
+  app.locals.aiModel = ai.model;
 
   const load = async (req, res, role) => {
     const found = await store.getMilestoneByToken(db, req.params.token);
@@ -91,6 +110,21 @@ export function createApp({ db, paypal, verifier, config }) {
   app.get('/new', (req, res) =>
     res.render('new', { title: 'New milestone', errors: [], form: { amount: '25.00' } })
   );
+
+  // AI drafts measurable criteria from a plain brief; the client edits them
+  // in the form before creating (and then funding) the milestone.
+  app.post('/api/draft-criteria', async (req, res) => {
+    const brief = String(req.body?.brief ?? '').trim();
+    if (brief.length < 15) return res.status(400).json({ error: 'Describe the work in at least a sentence.' });
+    if (brief.length > 2000) return res.status(400).json({ error: 'The brief is too long (2,000 characters max).' });
+    if (!draftLimit(req.ip)) return res.status(429).json({ error: 'Too many drafts. Please wait a few minutes.' });
+    try {
+      res.json({ criteria: await ai.draftCriteria(brief), model: ai.model });
+    } catch (err) {
+      console.error(`[draft] ${err.message}`);
+      res.status(502).json({ error: 'The AI could not draft criteria right now. You can write them yourself.' });
+    }
+  });
 
   app.post('/milestones', async (req, res) => {
     const { errors, value } = validateMilestoneInput(req.body);
@@ -195,6 +229,16 @@ export function createApp({ db, paypal, verifier, config }) {
     const submission = await store.addSubmission(db, m.id, url);
     verifier.enqueue(m.id, Number(submission.id));
     res.redirect(303, `/f/${m.freelancer_token}`);
+  });
+
+  // ----- Evidence report page, visible to both roles of that milestone -----
+  app.get('/r/:token/:reportId', async (req, res) => {
+    const found = await load(req, res);
+    if (!found) return;
+    const reportId = Number(req.params.reportId);
+    const report = Number.isInteger(reportId) ? await store.getReport(db, found.milestone.id, reportId) : null;
+    if (!report) return res.status(404).render('error', { title: 'Not found', message: 'Report not found.' });
+    res.render('report', { title: `Evidence report: ${found.milestone.title}`, m: found.milestone, role: found.role, r: report, token: req.params.token });
   });
 
   // ----- Evidence (screenshots from the DB), visible to both roles of that milestone -----

@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import { openDb, getMilestone, toRows, countReports } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { createVerifier } from '../src/verifier/service.js';
-import { mockJudge } from '../src/verifier/mockJudge.js';
+import { createAi } from '../src/ai/index.js';
+
+const mockAi = createAi({ provider: 'mock' });
 
 function fakePayPal() {
   const calls = [];
@@ -29,9 +31,9 @@ async function setup(pages) {
     checks: { url, ...(pages[url] ?? goodPage) },
     images: [{ label: 'desktop', data: JPEG }, { label: 'mobile', data: JPEG }],
   });
-  const verifier = createVerifier({ db, paypal, judge: mockJudge, capture, log: { error() {} } });
+  const verifier = createVerifier({ db, paypal, ai: mockAi, capture, log: { error() {} } });
   const config = { baseUrl: 'http://test', paypal: { clientId: 'cid' }, allowPrivateUrls: false, storage: 'memory' };
-  const app = createApp({ db, paypal, verifier, config });
+  const app = createApp({ db, paypal, verifier, ai: mockAi, config });
   const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const form = (path, data) => fetch(base + path, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(data) });
@@ -110,9 +112,44 @@ test('fail → resubmit → client voids; nothing is captured', async (t) => {
   assert.equal((await getMilestone(db, m.id)).status, 'FAILED');
   assert.equal(await countReports(db, m.id), 2);
 
+  // The freelancer sees an AI fix list, and the full evidence report opens for both roles.
+  const page = await (await fetch(`${ctx.base}/f/${m.freelancer_token}`)).text();
+  assert.match(page, /What to fix before resubmitting/);
+  assert.match(page, /TypeError: x is undefined/);
+  const reportPath = page.match(/href="(\/r\/[^"]+)"/)[1];
+  const report = await fetch(ctx.base + reportPath);
+  assert.equal(report.status, 200);
+  const html = await report.text();
+  assert.match(html, /Evidence report/);
+  assert.match(html, /Suggested fixes/);
+  const reportId = reportPath.split('/').pop();
+  assert.equal((await fetch(`${ctx.base}/r/${m.client_token}/${reportId}`)).status, 200);
+  assert.equal((await fetch(`${ctx.base}/r/someone-else/${reportId}`)).status, 404);
+
   assert.equal((await form(`/c/${m.client_token}/void`, {})).status, 303);
   assert.equal((await getMilestone(db, m.id)).status, 'VOIDED');
   assert.ok(!paypal.calls.some((c) => c[0] === 'capture'));
+});
+
+test('AI drafts criteria from a brief, with validation and a rate limit', async (t) => {
+  const { server, base, form, db } = await setup({});
+  t.after(() => server.close());
+  const draft = (brief) => fetch(`${base}/api/draft-criteria`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brief }) });
+  assert.equal((await draft('too short')).status, 400);
+  const ok = await draft('A one-page site for my bakery with opening hours. It needs a contact form.');
+  assert.equal(ok.status, 200);
+  const { criteria } = await ok.json();
+  assert.ok(criteria.length >= 3 && criteria.every((c) => typeof c === 'string'));
+
+  // The brief is stored with the milestone.
+  const created = await form('/milestones', { title: 'Brief test', amount: '5', payeeEmail: 'f@example.com', brief: 'A bakery page with hours.', criteria: criteria.join('\n') });
+  assert.equal(created.status, 303);
+  const [row] = toRows(await db.execute("SELECT brief FROM milestones WHERE title = 'Brief test'"));
+  assert.equal(row.brief, 'A bakery page with hours.');
+
+  let limited = false;
+  for (let i = 0; i < 10 && !limited; i++) limited = (await draft('Another brief that is long enough to draft.')).status === 429;
+  assert.ok(limited, 'draft endpoint is rate limited');
 });
 
 test('a restart mid-verification resumes and still pays out', async (t) => {
@@ -124,7 +161,7 @@ test('a restart mid-verification resumes and still pays out', async (t) => {
   await db.execute({ sql: "UPDATE milestones SET status = 'VERIFYING' WHERE id = ?", args: [m.id] });
   await db.execute({ sql: "INSERT INTO submissions (milestone_id, url, attempt) VALUES (?, 'https://93.184.216.34/', 1)", args: [m.id] });
   const capture = async (url) => ({ checks: { url, ...goodPage }, images: [] });
-  const fresh = createVerifier({ db, paypal, judge: mockJudge, capture, log: { error() {} } });
+  const fresh = createVerifier({ db, paypal, ai: mockAi, capture, log: { error() {} } });
   await fresh.recover();
   await fresh.idle();
   assert.equal((await getMilestone(db, m.id)).status, 'PAID');

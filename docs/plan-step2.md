@@ -16,7 +16,10 @@
 
 **Change after the first Render test:** the free plan restarts the container when it's idle and wipes the local disk, which lost a funded milestone. Storage moved to Turso (libsql), with screenshots stored in the DB, and a local SQLite file is used when the Turso variables are missing. An UptimeRobot ping hits `/healthz` every 5 minutes to keep the service awake.
 
-## Slice 2: real AI
+**Memory (after slimming Chromium):** peaks on Render were 241 MB total / 160 MB anon for example.com and 278 MB / 180 MB for wikipedia.org, against a 512 MB limit (before slimming: 491 MB total).
+
+## Slice 2: real AI (done)
+Default model: `gemini-2.5-flash` (it was correct, fast and cheap in a comparison with 3.5-flash). Every pass must cite evidence, and an objective failure such as HTTP ≥ 400 overrides the model.
 - `src/ai/` with a Gemini adapter (`AI_PROVIDER`, `AI_MODEL`, `GEMINI_API_KEY`) and a mock adapter.
 - From the client's plain-language brief, Gemini drafts measurable acceptance criteria, which the client can edit before funding.
 - Verifier: Playwright takes desktop and mobile screenshots and runs checks (HTTP status, console errors, broken links and images, page text). Gemini vision then returns strict JSON for each criterion, with pass, reason and evidence. Page text is treated as untrusted data.

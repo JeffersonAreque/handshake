@@ -65,6 +65,8 @@
   <section class="card">
     <h2>Acceptance criteria</h2>
     <ol class="criteria"><% m.criteria.forEach(c => { %><li><%= c %></li><% }) %></ol>
+    <% if (m.brief) { %><details class="brief"><summary class="muted">Client brief</summary><p><%= m.brief %></p></details><% } %>
+    <p class="muted small">Verified by <b><%= aiProvider === 'gemini' ? 'Gemini' : 'mock verifier' %></b> (<%= aiModel %>) from desktop and mobile screenshots.</p>
   </section>
 </div>
 
@@ -83,6 +85,12 @@
     <% if (m.status === 'DRAFT') { %>
       <p class="muted">Waiting for the client to fund this milestone.</p>
     <% } else if (m.status === 'FUNDED' || m.status === 'FAILED') { %>
+      <% if (m.status === 'FAILED' && reports[0] && reports[0].fixes.length) { %>
+        <div class="fixes">
+          <h3>What to fix before resubmitting</h3>
+          <ul><% reports[0].fixes.forEach(f => { %><li><%= f.fix %><% if (f.criterion) { %> <span class="muted">(<%= f.criterion %>)</span><% } %></li><% }) %></ul>
+        </div>
+      <% } %>
       <p>$<%= m.amount %> is held for you. Submit a public URL to your work. The verifier will check every criterion.</p>
       <form method="post" action="/f/<%= token %>/submit" class="copy">
         <input name="url" type="url" required placeholder="https://your-work.example.com" value="<%= typeof submittedUrl !== 'undefined' ? submittedUrl : (submission ? submission.url : '') %>">
@@ -107,6 +115,7 @@
           <span class="badge <%= r.passed ? 's-paid' : 's-failed' %>"><%= r.passed ? 'PASS' : 'FAIL' %></span>
           Attempt <%= r.attempt %>: <span class="mono"><%= r.url %></span> <span class="muted">· <%= r.model %> · <%= r.created_at %> UTC</span>
         </summary>
+        <p><a class="btn small-btn" href="/r/<%= token %>/<%= r.id %>">Open full evidence report →</a></p>
         <% if (r.error) { %><div class="alert warn"><%= r.error %></div><% } %>
         <ul class="verdicts">
           <% r.verdicts.forEach(v => { %>
