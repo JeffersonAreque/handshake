@@ -1,0 +1,134 @@
+<%
+  const busy = m.status === 'SUBMITTED' || m.status === 'VERIFYING';
+  const clientLink = `${baseUrl}/c/${m.client_token}`;
+  const freelancerLink = `${baseUrl}/f/${m.freelancer_token}`;
+  const token = role === 'client' ? m.client_token : m.freelancer_token;
+  const labels = { DRAFT: 'Waiting for payment', FUNDED: 'Funded, waiting for delivery', SUBMITTED: 'Submitted', VERIFYING: 'Verifying…', PASSED: 'Passed, paying out', FAILED: 'Changes needed', PAID: 'Paid', VOIDED: 'Cancelled', REFUNDED: 'Refunded' };
+%>
+<%- include('partials/head', { title, refresh: busy ? 3 : 0 }) %>
+<div class="role-banner <%= role %>">You are viewing as the <b><%= role %></b></div>
+
+<div class="title-row">
+  <h1><%= m.title %></h1>
+  <span class="badge s-<%= m.status.toLowerCase() %>"><%= labels[m.status] %></span>
+</div>
+<% if (m.description) { %><p class="muted"><%= m.description %></p><% } %>
+
+<% if (error) { %><div class="alert error"><%= error %></div><% } %>
+<% if (m.last_error && role === 'client') { %><div class="alert warn"><%= m.last_error %></div><% } %>
+
+<div class="grid">
+  <section class="card">
+    <h2>Payment</h2>
+    <dl class="kv">
+      <dt>Amount</dt><dd class="amount">$<%= m.amount %> <%= m.currency %></dd>
+      <dt>Paid to (payee)</dt><dd><%= m.payee_email %></dd>
+      <% if (m.authorization_id) { %><dt>Authorization</dt><dd class="mono"><%= m.authorization_id %></dd><% } %>
+      <% if (m.capture_id) { %><dt>Capture</dt><dd class="mono"><%= m.capture_id %></dd><% } %>
+    </dl>
+
+    <% if (role === 'client' && m.status === 'DRAFT') { %>
+      <% if (paypalClientId) { %>
+        <p>Pay with PayPal. The money is <b>held</b>, not charged, until the work passes verification.</p>
+        <div id="paypal-buttons"></div>
+        <div id="pay-msg" class="muted"></div>
+        <script src="https://www.paypal.com/sdk/js?client-id=<%= encodeURIComponent(paypalClientId) %>&intent=authorize&currency=<%= m.currency %>&merchant-id=<%= encodeURIComponent(m.payee_email) %>&components=buttons"></script>
+        <script>
+          (function () {
+            const token = <%- JSON.stringify(token) %>;
+            const msg = document.getElementById('pay-msg');
+            const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+              .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Request failed'); return d; });
+            paypal.Buttons({
+              style: { layout: 'vertical', shape: 'pill', label: 'pay' },
+              createOrder: () => post('/api/c/' + token + '/order').then((d) => d.id),
+              onApprove: (data) => { msg.textContent = 'Authorizing…'; return post('/api/c/' + token + '/authorize', { orderID: data.orderID }).then(() => location.reload()); },
+              onError: (err) => { msg.textContent = (err && err.message) || 'PayPal error. Please try again.'; },
+            }).render('#paypal-buttons');
+          })();
+        </script>
+      <% } else { %>
+        <div class="alert warn">PayPal is not configured on this server.</div>
+      <% } %>
+    <% } %>
+
+    <% if (role === 'client' && (m.status === 'FUNDED' || m.status === 'FAILED')) { %>
+      <form method="post" action="/c/<%= token %>/void" onsubmit="return confirm('Cancel this milestone and release the hold?')">
+        <button class="btn danger" type="submit">Cancel and release the hold</button>
+      </form>
+    <% } %>
+    <% if (role === 'client' && m.status === 'PASSED') { %>
+      <form method="post" action="/c/<%= token %>/payout"><button class="btn" type="submit">Retry payout</button></form>
+    <% } %>
+  </section>
+
+  <section class="card">
+    <h2>Acceptance criteria</h2>
+    <ol class="criteria"><% m.criteria.forEach(c => { %><li><%= c %></li><% }) %></ol>
+  </section>
+</div>
+
+<% if (role === 'client') { %>
+  <section class="card">
+    <h2>Links</h2>
+    <p>Send this link to the freelancer:</p>
+    <div class="copy"><input readonly value="<%= freelancerLink %>" onclick="this.select()"><button class="btn" type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent='Copied'">Copy</button></div>
+    <p class="muted">Your private client link: <a href="<%= clientLink %>">bookmark this page</a>. Anyone with it can manage this milestone.</p>
+  </section>
+<% } %>
+
+<% if (role === 'freelancer') { %>
+  <section class="card">
+    <h2>Deliver</h2>
+    <% if (m.status === 'DRAFT') { %>
+      <p class="muted">Waiting for the client to fund this milestone.</p>
+    <% } else if (m.status === 'FUNDED' || m.status === 'FAILED') { %>
+      <p>$<%= m.amount %> is held for you. Submit a public URL to your work. The verifier will check every criterion.</p>
+      <form method="post" action="/f/<%= token %>/submit" class="copy">
+        <input name="url" type="url" required placeholder="https://your-work.example.com" value="<%= typeof submittedUrl !== 'undefined' ? submittedUrl : (submission ? submission.url : '') %>">
+        <button class="btn primary" type="submit"><%= m.status === 'FAILED' ? 'Resubmit' : 'Submit for verification' %></button>
+      </form>
+    <% } else if (busy) { %>
+      <p>Verifying <span class="mono"><%= submission && submission.url %></span>… This page refreshes automatically.</p>
+    <% } else if (m.status === 'PAID') { %>
+      <p class="ok">Payment captured to <b><%= m.payee_email %></b>.</p>
+    <% } else { %>
+      <p class="muted">This milestone is closed (<%= labels[m.status] %>).</p>
+    <% } %>
+  </section>
+<% } %>
+
+<% if (reports.length) { %>
+  <section class="card">
+    <h2>Verification reports</h2>
+    <% reports.forEach((r, i) => { %>
+      <details class="report" <%= i === 0 ? 'open' : '' %>>
+        <summary>
+          <span class="badge <%= r.passed ? 's-paid' : 's-failed' %>"><%= r.passed ? 'PASS' : 'FAIL' %></span>
+          Attempt <%= r.attempt %>: <span class="mono"><%= r.url %></span> <span class="muted">· <%= r.model %> · <%= r.created_at %> UTC</span>
+        </summary>
+        <% if (r.error) { %><div class="alert warn"><%= r.error %></div><% } %>
+        <ul class="verdicts">
+          <% r.verdicts.forEach(v => { %>
+            <li class="<%= v.pass ? 'pass' : 'fail' %>"><b><%= v.pass ? '✓' : '✗' %> <%= v.criterion %></b><div class="muted"><%= v.reason %></div></li>
+          <% }) %>
+        </ul>
+        <% if (r.screenshots.length) { %>
+          <div class="shots">
+            <% r.screenshots.forEach(s => { %>
+              <a href="/e/<%= token %>/<%= r.submission_id %>/<%= s.file %>" target="_blank" rel="noreferrer"><figure><img loading="lazy" src="/e/<%= token %>/<%= r.submission_id %>/<%= s.file %>" alt="<%= s.label %> screenshot"><figcaption><%= s.label %></figcaption></figure></a>
+            <% }) %>
+          </div>
+        <% } %>
+      </details>
+    <% }) %>
+  </section>
+<% } %>
+
+<section class="card">
+  <h2>History</h2>
+  <ul class="events">
+    <% events.forEach(e => { %><li><span class="badge s-<%= e.status.toLowerCase() %>"><%= e.status %></span> <%= e.note || '' %> <span class="muted"><%= e.created_at %> UTC</span></li><% }) %>
+  </ul>
+</section>
+<%- include('partials/foot') %>

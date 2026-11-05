@@ -1,0 +1,27 @@
+<%- include('partials/head', { title }) %>
+<h1>New milestone</h1>
+<% if (errors.length) { %>
+  <div class="alert error"><% errors.forEach(e => { %><div><%= e %></div><% }) %></div>
+<% } %>
+<form method="post" action="/milestones" class="card form">
+  <label>Title
+    <input name="title" required maxlength="120" value="<%= form.title || '' %>" placeholder="Landing page for my bakery">
+  </label>
+  <label>Description <span class="muted">(optional)</span>
+    <textarea name="description" rows="2" maxlength="2000" placeholder="What is being delivered"><%= form.description || '' %></textarea>
+  </label>
+  <div class="row">
+    <label>Amount (USD)
+      <input name="amount" required inputmode="decimal" value="<%= form.amount || '' %>">
+    </label>
+    <label>Freelancer’s PayPal email
+      <input name="payeeEmail" type="email" required value="<%= form.payeeEmail || '' %>" placeholder="freelancer@example.com">
+      <small class="muted">Use a PayPal <b>sandbox business</b> account email. Captured funds go here.</small>
+    </label>
+  </div>
+  <label>Acceptance criteria <span class="muted">(one per line)</span>
+    <textarea name="criteria" rows="5" required placeholder="The page shows the bakery name and a hero image&#10;There is a contact form with name, email and message&#10;The layout works on mobile with no horizontal scrolling"><%= form.criteria || '' %></textarea>
+  </label>
+  <button class="btn primary" type="submit">Create milestone</button>
+</form>
+<%- include('partials/foot') %>

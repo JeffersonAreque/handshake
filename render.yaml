@@ -1,0 +1,17 @@
+# Render Blueprint. Free plan: data in /app/data resets on each deploy or restart.
+services:
+  - type: web
+    name: handshake
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: AI_PROVIDER
+        value: mock
