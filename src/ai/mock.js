@@ -1,6 +1,12 @@
 // Deterministic offline provider (tests, local dev without a key). Same raw
 // output shape as the Gemini adapter.
 export function createMock() {
+  const raw = createRawMock();
+  const wrap = (fn) => async (...args) => ({ data: await fn(...args), model: 'mock' });
+  return { provider: 'mock', model: 'mock', judge: wrap(raw.judge), draftCriteria: wrap(raw.draftCriteria), fixList: wrap(raw.fixList) };
+}
+
+function createRawMock() {
   return {
     provider: 'mock',
     model: 'mock',

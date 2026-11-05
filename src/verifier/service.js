@@ -55,8 +55,16 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
             capture(submission.url, { allowPrivate, onStep: step })
           );
           step(`Asking ${ai.provider === 'gemini' ? 'Gemini' : 'the verifier'} to check ${m.criteria.length} criteria…`);
-          const verdicts = await ai.judge({ criteria: m.criteria, checks, images });
-          return { checks, images, verdicts, error: null };
+          let judged;
+          try {
+            judged = await ai.judge({ criteria: m.criteria, checks, images });
+          } catch (err) {
+            // The AI provider failed (quota, outage): nothing was judged.
+            // Keep the evidence and say so plainly, without blaming the work.
+            const msg = `The AI verifier was unavailable (${err.message}), so this attempt was not judged. Please resubmit in a few minutes.`;
+            return { checks, images, verdicts: m.criteria.map((criterion) => ({ criterion, pass: false, reason: 'Not judged: the AI verifier was unavailable.', evidence: [] })), error: msg, model: ai.model };
+          }
+          return { checks, images, verdicts: judged.verdicts, model: judged.model, error: null };
         })(),
         RUN_TIMEOUT_MS,
         'Verification timed out after 3 minutes'
@@ -84,7 +92,7 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
       milestoneId: m.id,
       passed,
       fixes,
-      model: ai.model,
+      model: report.model ?? ai.model,
       checks: report.checks,
       verdicts: report.verdicts,
       error: report.error,
@@ -97,7 +105,10 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
       await payout(m.id);
     } else {
       const failed = report.verdicts.filter((v) => !v.pass).length;
-      await transition(db, m.id, STATUS.FAILED, {}, report.error ?? `${failed} of ${report.verdicts.length} criteria failed`);
+      const note = report.error
+        ? (report.error.startsWith('The AI verifier was unavailable') ? 'Not judged: the AI verifier was unavailable; resubmit' : report.error)
+        : `${failed} of ${report.verdicts.length} criteria failed`;
+      await transition(db, m.id, STATUS.FAILED, {}, note);
     }
   }
 

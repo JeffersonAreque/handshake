@@ -7,29 +7,35 @@ import { normalizeVerdicts, normalizeCriteria, normalizeFixes } from './verdicts
 export { AiError };
 
 /**
- * @param {{provider: string, model?: string, apiKey?: string, client?: object}} options
+ * @param {{provider: string, model?: string, fallbackModel?: string, apiKey?: string, client?: object}} options
  *   provider: 'gemini' | 'mock'. Fails closed: 'gemini' without a key throws.
  */
-export function createAi({ provider = 'mock', model, apiKey, client } = {}) {
+export function createAi({ provider = 'mock', model, fallbackModel, apiKey, client } = {}) {
   let adapter;
-  if (provider === 'gemini') adapter = createGemini({ apiKey, model: model || undefined, client });
+  if (provider === 'gemini') adapter = createGemini({ apiKey, model: model || undefined, fallbackModel, client });
   else if (provider === 'mock') adapter = createMock();
   else throw new AiError(`Unknown AI_PROVIDER "${provider}" (use gemini or mock)`);
 
   return {
     provider: adapter.provider,
     model: adapter.model,
-    /** One verdict per criterion, validated; never throws for bad JSON content. */
+    /**
+     * One verdict per criterion, validated. Returns { verdicts, model } where
+     * model is the one that answered (the fallback if the main one was out of quota).
+     */
     async judge({ criteria, checks, images = [] }) {
-      return normalizeVerdicts(criteria, await adapter.judge({ criteria, checks, images }), checks);
+      const { data, model: used } = await adapter.judge({ criteria, checks, images });
+      return { verdicts: normalizeVerdicts(criteria, data, checks), model: used };
     },
     async draftCriteria(brief) {
-      const criteria = normalizeCriteria(await adapter.draftCriteria(String(brief)));
+      const { data, model: used } = await adapter.draftCriteria(String(brief));
+      const criteria = normalizeCriteria(data);
       if (!criteria.length) throw new AiError('The AI could not draft criteria from this brief');
-      return criteria;
+      return { criteria, model: used };
     },
     async fixList({ criteria, verdicts, checks }) {
-      return normalizeFixes(await adapter.fixList({ criteria, verdicts, checks }), criteria);
+      const { data } = await adapter.fixList({ criteria, verdicts, checks });
+      return normalizeFixes(data, criteria);
     },
   };
 }

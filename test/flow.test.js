@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { openDb, getMilestone, toRows, countReports } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { createVerifier } from '../src/verifier/service.js';
-import { createAi } from '../src/ai/index.js';
+import { createAi, AiError } from '../src/ai/index.js';
 import { createMoney } from '../src/money.js';
 import { seedShowcase, createDemoMilestone } from '../src/demo.js';
 import { deleteOldDemos, listShowcase } from '../src/db.js';
@@ -220,6 +220,33 @@ test('live endpoint streams status changes over SSE', async (t) => {
   await readUntil(() => seen.some((e) => e.status === 'FUNDED'));
   ac.abort();
   assert.equal((await fetch(`${base}/live/nope`)).status, 404);
+});
+
+test('AI outage: attempt is not judged, freelancer is told plainly and can resubmit', async (t) => {
+  const ctx = await setup({});
+  const { db, paypal, server, base, form, m } = ctx;
+  t.after(() => server.close());
+  await fund(ctx);
+  let fixCalls = 0;
+  const downAi = {
+    ...mockAi,
+    judge: async () => { throw new AiError('Gemini quota exceeded (HTTP 429 RESOURCE_EXHAUSTED)', { unavailable: true, quota: true }); },
+    fixList: async () => { fixCalls++; return []; },
+  };
+  const capture = async (url) => ({ checks: { url, ...goodPage }, images: [{ label: 'desktop', data: JPEG }] });
+  const down = createVerifier({ db, money: ctx.money, ai: downAi, capture, log: { error() {} } });
+  await db.execute({ sql: "UPDATE milestones SET status = 'SUBMITTED' WHERE id = ?", args: [m.id] });
+  const s = await db.execute({ sql: "INSERT INTO submissions (milestone_id, url, attempt) VALUES (?, 'https://93.184.216.34/', 1)", args: [m.id] });
+  await down.enqueue(m.id, Number(s.lastInsertRowid));
+  assert.equal((await getMilestone(db, m.id)).status, 'FAILED');
+  assert.equal(fixCalls, 0, 'no fix list for an attempt that was not judged');
+  assert.ok(!paypal.calls.some((c) => c[0] === 'capture'));
+  const page = await (await fetch(`${base}/f/${m.freelancer_token}`)).text();
+  assert.match(page, /wasn’t judged/);
+  assert.match(page, /quota exceeded/);
+  assert.doesNotMatch(page, /\{&#34;error/);
+  // The freelancer can resubmit right away.
+  assert.equal((await form(`/f/${m.freelancer_token}/submit`, { url: 'https://93.184.216.34/' })).status, 303);
 });
 
 test('fail → resubmit → client voids; nothing is captured', async (t) => {

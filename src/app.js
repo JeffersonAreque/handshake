@@ -149,7 +149,7 @@ export function createApp({ db, paypal, money, verifier, ai, config }) {
     if (brief.length > 2000) return res.status(400).json({ error: 'The brief is too long (2,000 characters max).' });
     if (!draftLimit(req.ip)) return res.status(429).json({ error: 'Too many drafts. Please wait a few minutes.' });
     try {
-      res.json({ criteria: await ai.draftCriteria(brief), model: ai.model });
+      res.json(await ai.draftCriteria(brief));
     } catch (err) {
       console.error(`[draft] ${err.message}`);
       res.status(502).json({ error: 'The AI could not draft criteria right now. You can write them yourself.' });

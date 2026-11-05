@@ -124,6 +124,9 @@
     <% if (role === 'freelancer') { %>
       <section class="card">
         <div class="card-head"><h2>Deliver</h2></div>
+        <% if (m.status === 'FAILED' && latest && latest.error) { %>
+          <div class="alert info"><div><b>Your last attempt wasn’t judged.</b> <%= latest.error %></div></div>
+        <% } %>
         <% if (m.status === 'FAILED' && latest && latest.fixes.length) { %>
           <div class="fixes">
             <h3>What to fix before resubmitting</h3>
