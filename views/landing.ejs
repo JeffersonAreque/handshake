@@ -42,7 +42,7 @@
   <div class="showcase">
     <% showcase.forEach(m => { %>
       <a class="card" href="/c/<%= m.client_token %>">
-        <div class="card-head"><h3 style="margin:0"><%= m.title.replace('Showcase: ', '') %></h3><span class="badge s-<%= m.status.toLowerCase() %>"><%= labels[m.status] %></span></div>
+        <div class="card-head"><h3 style="margin:0"><%= m.title.includes('passes') ? 'A delivery that passes' : 'A delivery that needs changes' %></h3><span class="badge s-<%= m.status.toLowerCase() %>"><%= labels[m.status] %></span></div>
         <p class="muted small" style="margin:0">Real Gemini verification of the bundled <%= m.title.includes('passes') ? 'good' : 'broken' %> demo site. Read-only. Open the evidence report →</p>
       </a>
     <% }) %>

@@ -26,7 +26,9 @@ Default model: `gemini-2.5-flash` (it was correct, fast and cheap in a compariso
 - On a fail, Gemini writes a short fix list for the freelancer.
 - The evidence report page is added in this slice.
 
-## Slice 3: polish and demo
+## Slice 3: polish and demo (done)
+**Change:** the sandbox app can't process cards (`PAYEE_NOT_ENABLED_FOR_CARD_PROCESSING`), so a funded milestone can't be created server-side. "Try as freelancer" therefore uses a clearly labeled *simulated hold*, through a money adapter that only `funding = 'simulated'` milestones can take. "Try as client" uses real sandbox checkout.
+
 - CSS design system with light and dark themes, mobile-friendly.
 - A timeline of the milestone (Funded → Submitted → Verifying → Passed → Paid), with live progress over SSE.
 - Refund after capture.

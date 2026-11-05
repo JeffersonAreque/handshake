@@ -90,12 +90,17 @@ main.container { padding-top: 28px; padding-bottom: 56px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 750; font-size: 18px; color: var(--text); text-decoration: none; letter-spacing: -0.01em; }
 .brand svg { width: 28px; height: 28px; }
 .site-nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.site-nav a { color: var(--text-2); text-decoration: none; font-size: 14px; font-weight: 550; padding: 8px 10px; border-radius: 8px; }
+.site-nav a { color: var(--text-2); text-decoration: none; font-size: 14px; font-weight: 550; padding: 8px 10px; border-radius: 8px; white-space: nowrap; }
 .site-nav a:hover { background: var(--bg-tint); color: var(--text); }
 .sandbox-pill { font-size: 12px; font-weight: 650; padding: 3px 9px; border-radius: 99px; background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
 .icon-btn { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; }
 .icon-btn:hover { color: var(--text); border-color: var(--border-strong); }
-@media (max-width: 640px) { .site-nav .hide-sm { display: none; } }
+@media (max-width: 640px) {
+  .site-nav .hide-sm { display: none; }
+  .site-header .container { gap: 10px; }
+  .site-nav a { padding: 8px 6px; }
+}
+@media (max-width: 380px) { .sandbox-pill { display: none; } }
 
 .site-footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
 .site-footer .container { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; padding-top: 20px; padding-bottom: 28px; }
@@ -122,6 +127,7 @@ form.inline { display: inline; }
 /* ---------- Cards ---------- */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-sm); }
 .card + .card { margin-top: 16px; }
+.showcase > .card + .card, .tech > .card + .card, .try-grid > * + * { margin-top: 0; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .card-head h2 { margin: 0; }
 .card.soft { background: var(--surface-2); }

@@ -28,3 +28,11 @@ services:
       # Optional, defaults to gemini-2.5-flash
       - key: AI_MODEL
         sync: false
+      # One-click demo. DEMO_PAYEE_EMAIL (sandbox business account) enables
+      # "Try as client"; the buyer login is shown on demo checkout pages.
+      - key: DEMO_PAYEE_EMAIL
+        sync: false
+      - key: DEMO_BUYER_EMAIL
+        sync: false
+      - key: DEMO_BUYER_PASSWORD
+        sync: false

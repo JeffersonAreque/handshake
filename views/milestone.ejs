@@ -127,7 +127,8 @@
         <% if (m.status === 'FAILED' && latest && latest.fixes.length) { %>
           <div class="fixes">
             <h3>What to fix before resubmitting</h3>
-            <ol><% latest.fixes.forEach(f => { %><li><%= f.fix %><% if (f.criterion) { %> <span class="muted">(<%= f.criterion %>)</span><% } %></li><% }) %></ol>
+            <ol><% latest.fixes.forEach(f => { %><li><%= f.fix %></li><% }) %></ol>
+            <p class="small muted" style="margin:8px 0 0">Details for each criterion are in the <a href="/r/<%= token %>/<%= latest.id %>">evidence report</a>.</p>
           </div>
         <% } %>
         <% if (m.status === 'DRAFT') { %>
@@ -163,8 +164,8 @@
           <div class="alert info"><div>The client refunded this payment after payout.</div></div>
         <% } else if (m.status === 'VOIDED') { %>
           <div class="alert info"><div>The client cancelled this milestone and released the hold.</div></div>
-        <% } else { %>
-          <p class="muted">This milestone is <%= labels[m.status].toLowerCase() %>.</p>
+        <% } else if (showcase) { %>
+          <p class="muted">Resubmitting is disabled on this read-only showcase. <a href="/#try">Start your own demo</a> to try the verifier.</p>
         <% } %>
         <dl class="kv" style="margin-top:14px"><dt>Paid to</dt><dd><%= m.payee_email %></dd></dl>
       </section>
