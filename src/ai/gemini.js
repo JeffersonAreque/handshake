@@ -89,7 +89,11 @@ export function createGemini({ apiKey, model = DEFAULT_MODEL, fallbackModels = D
   let chain = [model, ...new Set(fallbacks)];
   const health = {}; // model -> { ok, error, checkedAt }
 
-  /** Tries each model in the chain; moves on only for quota or a gone model. */
+  /**
+   * Tries each model in the chain. Moves on when a model is unavailable
+   * (quota, gone, or still overloaded/5xx after its retries); a bad request
+   * or invalid output stops the chain.
+   */
   async function generate(req) {
     let lastErr;
     for (const m of chain) {
@@ -101,7 +105,7 @@ export function createGemini({ apiKey, model = DEFAULT_MODEL, fallbackModels = D
           health[m] = { ok: false, error: err.message, gone: true, checkedAt: new Date().toISOString() };
           if (chain.length > 1) chain = chain.filter((x) => x !== m); // don't waste calls on it again
         }
-        if (!(err instanceof AiError && (err.quota || err.gone))) throw err;
+        if (!(err instanceof AiError && err.unavailable)) throw err;
       }
     }
     throw lastErr;

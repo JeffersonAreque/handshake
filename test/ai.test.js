@@ -107,7 +107,7 @@ test('gemini: retries on 503, then gives up with a clean error', async () => {
   assert.equal(sleeps.length, 1);
 
   const bad = fakeClient([new Error('503 a\nsecret details'), new Error('503'), new Error('503')]);
-  const g2 = createGemini({ apiKey: 'SECRETKEY', client: bad, sleepFn: async () => {} });
+  const g2 = createGemini({ apiKey: 'SECRETKEY', client: bad, fallbackModels: [], sleepFn: async () => {} });
   await assert.rejects(g2.draftCriteria('brief'), (err) => err instanceof AiError && err.unavailable && !err.message.includes('secret details') && !err.message.includes('SECRETKEY'));
   assert.equal(bad.calls.length, 3);
 
@@ -159,6 +159,19 @@ test('gemini: a model that is gone (404) is skipped, reported clearly and droppe
 
   const err = await createGemini({ apiKey: 'k', client: fakeClient([new Error(GONE_ERROR)]), fallbackModels: [] }).judge({ criteria: ['x'], checks: okChecks, images: [] }).catch((e) => e);
   assert.ok(err.gone && err.unavailable && !err.quota);
+});
+
+test('gemini: an overloaded model (503 after retries) falls through to the next one', async () => {
+  const OVERLOADED = '{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}';
+  const client = fakeClient([new Error(QUOTA_ERROR), new Error(OVERLOADED), new Error(OVERLOADED), new Error(OVERLOADED), okVerdict]);
+  const ai = createAi({ provider: 'gemini', apiKey: 'k', client });
+  const { model } = await ai.judge({ criteria: ['x'], checks: okChecks });
+  assert.equal(model, 'gemini-flash-lite-latest');
+  assert.deepEqual(client.calls.map((c) => c.model), ['gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest']);
+  // A request error that isn't about availability still stops the chain.
+  const bad = fakeClient(['not json']);
+  await assert.rejects(createAi({ provider: 'gemini', apiKey: 'k', client: bad }).judge({ criteria: ['x'], checks: okChecks }), /invalid JSON/);
+  assert.equal(bad.calls.length, 1);
 });
 
 test('startup check: probes every model, drops gone ones, keeps quota-limited ones', async () => {
