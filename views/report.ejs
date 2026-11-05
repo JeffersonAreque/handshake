@@ -3,65 +3,80 @@
   const c = r.checks || {};
   const passedCount = r.verdicts.filter(v => v.pass).length;
   const list = (a) => Array.isArray(a) ? a : [];
+  const yesNo = (n) => n ? `<span class="badge fail">${n}</span>` : '<span class="badge pass">0</span>';
 %>
 <%- include('partials/head', { title }) %>
-<p><a href="<%= back %>">← Back to milestone</a></p>
-<div class="title-row">
-  <h1>Evidence report</h1>
-  <span class="badge <%= r.passed ? 's-paid' : 's-failed' %>"><%= r.passed ? 'PASS' : 'FAIL' %>: <%= passedCount %>/<%= r.verdicts.length %> criteria</span>
+<p><a class="btn btn-ghost btn-sm" href="<%= back %>">← Back to milestone</a></p>
+<div class="page-head">
+  <div>
+    <div class="eyebrow"><span class="role-pill">Evidence report</span><span>Attempt <%= r.attempt %></span><span><%= r.created_at %> UTC</span></div>
+    <h1><%= m.title %></h1>
+    <p class="mono muted" style="margin:0"><a href="<%= r.url %>" target="_blank" rel="noreferrer"><%= r.url %></a></p>
+  </div>
+  <div class="amount-big">
+    <strong style="color:var(<%= r.passed ? '--ok' : '--bad' %>)"><%= passedCount %>/<%= r.verdicts.length %></strong>
+    <span class="badge <%= r.passed ? 'pass' : 'fail' %>"><%= r.passed ? 'All criteria passed' : 'Changes needed' %></span>
+  </div>
 </div>
-<p class="muted"><b><%= m.title %></b> · Attempt <%= r.attempt %> · <span class="mono"><%= r.url %></span><br>
-  Verified by <b><%= r.model %></b> on <%= r.created_at %> UTC. Page text was treated as untrusted data, and each pass had to cite evidence.</p>
 
+<div class="alert info"><div>Verified by <b><%= r.model %></b>. Each pass had to cite evidence (a screenshot or a browser check), and page text was treated as untrusted data.</div></div>
 <% if (r.error) { %><div class="alert warn"><%= r.error %></div><% } %>
 
-<section class="card">
-  <h2>Criteria</h2>
-  <ol class="verdicts numbered">
-    <% r.verdicts.forEach(v => { %>
-      <li class="<%= v.pass ? 'pass' : 'fail' %>">
-        <b><%= v.pass ? '✓ Pass' : '✗ Fail' %>: <%= v.criterion %></b>
-        <div><%= v.reason %></div>
-        <% if (v.evidence && v.evidence.length) { %><div class="evidence"><% v.evidence.forEach(e => { %><span class="chip"><%= e %></span><% }) %></div><% } %>
-      </li>
-    <% }) %>
-  </ol>
-</section>
-
-<% if (!r.passed && r.fixes.length) { %>
-  <section class="card fixes">
-    <h2>Suggested fixes</h2>
-    <ul><% r.fixes.forEach(f => { %><li><%= f.fix %><% if (f.criterion) { %> <span class="muted">(<%= f.criterion %>)</span><% } %></li><% }) %></ul>
+<div class="grid-2">
+  <section class="card">
+    <div class="card-head"><h2>Criteria</h2></div>
+    <ol class="verdicts">
+      <% r.verdicts.forEach(v => { %>
+        <li class="verdict <%= v.pass ? 'pass' : 'fail' %>">
+          <span class="mark" aria-label="<%= v.pass ? 'Pass' : 'Fail' %>"><%= v.pass ? '✓' : '✕' %></span>
+          <div>
+            <b><%= v.criterion %></b>
+            <p><%= v.reason %></p>
+            <% if (v.evidence && v.evidence.length) { %><div class="evidence"><% v.evidence.forEach(e => { %><span class="chip"><%= e %></span><% }) %></div><% } %>
+          </div>
+        </li>
+      <% }) %>
+    </ol>
   </section>
-<% } %>
+
+  <div>
+    <% if (!r.passed && r.fixes.length) { %>
+      <section class="fixes">
+        <h3>Suggested fixes</h3>
+        <ol><% r.fixes.forEach(f => { %><li><%= f.fix %><% if (f.criterion) { %> <div class="muted">↳ <%= f.criterion %></div><% } %></li><% }) %></ol>
+      </section>
+    <% } %>
+    <section class="card">
+      <div class="card-head"><h2>Browser checks</h2></div>
+      <dl class="kv">
+        <dt>HTTP status</dt><dd><span class="badge <%= c.httpStatus && c.httpStatus < 400 ? 'pass' : 'fail' %>"><%= c.httpStatus ?? 'none' %></span></dd>
+        <dt>JavaScript errors</dt><dd><%- yesNo(list(c.pageErrors).length) %></dd>
+        <dt>Console errors</dt><dd><%- yesNo(list(c.consoleErrors).length) %></dd>
+        <dt>Broken images</dt><dd><%- yesNo(list(c.brokenImages).length) %></dd>
+        <dt>Failed requests</dt><dd><%- yesNo(list(c.failedRequests).length) %></dd>
+        <dt>Mobile overflow</dt><dd><%- c.mobileHorizontalOverflow == null ? '—' : (c.mobileHorizontalOverflow ? '<span class="badge fail">Yes</span>' : '<span class="badge pass">No</span>') %></dd>
+        <dt>Load time</dt><dd><%= c.loadMs != null ? (c.loadMs / 1000).toFixed(1) + ' s' : '—' %></dd>
+        <dt>Title</dt><dd><%= c.title || '—' %></dd>
+        <% if (list(c.blockedHosts).length) { %><dt>Blocked hosts</dt><dd class="mono"><%= c.blockedHosts.join(', ') %></dd><% } %>
+      </dl>
+      <% const errs = [...list(c.pageErrors), ...list(c.consoleErrors), ...list(c.brokenImages).map(u => 'Broken image: ' + u)]; if (errs.length) { %>
+        <details style="margin-top:12px"><summary class="small">Error details</summary><ul class="mono small" style="padding-left:18px"><% errs.forEach(e => { %><li><%= e %></li><% }) %></ul></details>
+      <% } %>
+    </section>
+  </div>
+</div>
 
 <% if (r.screenshots.length) { %>
   <section class="card">
-    <h2>Screenshots</h2>
-    <div class="shots big">
+    <div class="card-head"><h2>Screenshots</h2><span class="muted small">Captured by headless Chromium, cut off after 3000 px of page height</span></div>
+    <div class="shots">
       <% r.screenshots.forEach(s => { %>
-        <a href="/e/<%= token %>/<%= r.submission_id %>/<%= s.file %>" target="_blank" rel="noreferrer"><figure><img loading="lazy" src="/e/<%= token %>/<%= r.submission_id %>/<%= s.file %>" alt="<%= s.label %> screenshot of the delivery"><figcaption><%= s.file %></figcaption></figure></a>
+        <figure>
+          <a href="/e/<%= token %>/<%= r.submission_id %>/<%= s.file %>" target="_blank" rel="noreferrer"><img loading="lazy" src="/e/<%= token %>/<%= r.submission_id %>/<%= s.file %>" alt="<%= s.label %> screenshot of the delivery"></a>
+          <figcaption><%= s.file %></figcaption>
+        </figure>
       <% }) %>
     </div>
   </section>
 <% } %>
-
-<section class="card">
-  <h2>Objective checks</h2>
-  <dl class="kv">
-    <dt>HTTP status</dt><dd><%= c.httpStatus ?? '—' %></dd>
-    <dt>Final URL</dt><dd class="mono"><%= c.finalUrl || c.url || '—' %></dd>
-    <dt>Page title</dt><dd><%= c.title || '—' %></dd>
-    <dt>Load time</dt><dd><%= c.loadMs != null ? (c.loadMs / 1000).toFixed(1) + ' s' : '—' %></dd>
-    <dt>JavaScript errors</dt><dd><%= list(c.pageErrors).length %></dd>
-    <dt>Console errors</dt><dd><%= list(c.consoleErrors).length %></dd>
-    <dt>Failed requests</dt><dd><%= list(c.failedRequests).length %></dd>
-    <dt>Broken images</dt><dd><%= list(c.brokenImages).length %></dd>
-    <dt>Mobile horizontal scroll</dt><dd><%= c.mobileHorizontalOverflow == null ? '—' : (c.mobileHorizontalOverflow ? 'Yes' : 'No') %></dd>
-    <% if (list(c.blockedHosts).length) { %><dt>Blocked hosts</dt><dd class="mono"><%= c.blockedHosts.join(', ') %></dd><% } %>
-  </dl>
-  <% const errs = [...list(c.pageErrors), ...list(c.consoleErrors)]; if (errs.length) { %>
-    <details><summary>Error messages</summary><ul class="mono"><% errs.forEach(e => { %><li><%= e %></li><% }) %></ul></details>
-  <% } %>
-</section>
 <%- include('partials/foot') %>

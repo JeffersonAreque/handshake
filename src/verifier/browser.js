@@ -47,13 +47,16 @@ async function capturePage(browser, url, { label, options }) {
     throw new Error(`Could not open the page (${label}): ${err.message.split('\n')[0]}`);
   }
   const loadMs = Date.now() - started;
-  const info = await page.evaluate(() => ({
+  // Compare against the emulated device width: on mobile, Chromium widens the
+  // layout viewport to fit overflowing content, so innerWidth hides overflow.
+  const deviceWidth = options.viewport.width;
+  const info = await page.evaluate((vw) => ({
     title: document.title,
     text: (document.body?.innerText || '').slice(0, 4000),
     brokenImages: [...document.images].filter((i) => i.complete && i.naturalWidth === 0).map((i) => i.currentSrc || i.src).slice(0, 20),
-    horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+    horizontalOverflow: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0) > vw + 1,
     height: document.documentElement.scrollHeight,
-  }));
+  }), deviceWidth);
   // Full page, capped in height and as JPEG, so evidence stays small in the DB.
   const shot = { type: 'jpeg', quality: 70, timeout: 15_000 };
   const viewportSize = page.viewportSize();
@@ -83,7 +86,7 @@ async function capturePage(browser, url, { label, options }) {
  * { checks: {...}, images: [{label, data: Buffer (JPEG)}] }. Throws if the
  * page can't be opened.
  */
-export async function captureEvidence(url, { allowPrivate = false } = {}) {
+export async function captureEvidence(url, { allowPrivate = false, onStep = () => {} } = {}) {
   // Unless explicitly allowed (local dev), all browser traffic goes through
   // the egress proxy, which blocks private/internal addresses. '<-loopback>'
   // stops Chromium from silently bypassing the proxy for localhost.
@@ -95,7 +98,10 @@ export async function captureEvidence(url, { allowPrivate = false } = {}) {
   });
   try {
     const pages = [];
-    for (const viewport of VIEWPORTS) pages.push(await capturePage(browser, url, viewport));
+    for (const viewport of VIEWPORTS) {
+      onStep(`Taking the ${viewport.label} screenshot and running checks…`);
+      pages.push(await capturePage(browser, url, viewport));
+    }
     const [desktop, mobile] = pages;
     return {
       checks: {

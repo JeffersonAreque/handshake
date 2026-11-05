@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pan de Casa · Neighborhood bakery</title>
+  <meta name="robots" content="noindex">
+  <style>
+    :root { --ink: #3b2414; --muted: #7a5a43; --cream: #fff9f0; --crust: #b8641f; --line: #ecd9bf; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.5 Georgia, "Times New Roman", serif; color: var(--ink); background: var(--cream); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+    header { padding: 20px 0; display: flex; justify-content: space-between; align-items: center; }
+    .logo { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+    nav a { color: var(--muted); margin-left: 16px; text-decoration: none; }
+    .hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; align-items: center; padding: 12px 0 28px; }
+    .hero h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.1; margin: 0 0 12px; }
+    .hero p { color: var(--muted); font-size: 18px; margin: 0; }
+    .hero img { width: 100%; height: auto; border-radius: 18px; display: block; }
+    section { padding: 22px 0; border-top: 1px solid var(--line); }
+    h2 { font-size: 26px; margin: 0 0 12px; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+    td:last-child { text-align: right; font-weight: 700; }
+    form { display: grid; gap: 10px; max-width: 520px; }
+    label { font-weight: 700; display: grid; gap: 4px; }
+    input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; width: 100%; }
+    button { font: inherit; font-weight: 700; padding: 12px 20px; border: 0; border-radius: 999px; background: var(--crust); color: #fff; cursor: pointer; justify-self: start; }
+    footer { padding: 22px 0 32px; color: var(--muted); font-size: 14px; }
+    @media (max-width: 720px) {
+      .hero, .cols { grid-template-columns: 1fr; gap: 16px; }
+      nav { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">Pan de Casa</div>
+      <nav><a href="#hours">Hours</a><a href="#menu">Menu</a><a href="#contact">Contact</a></nav>
+    </header>
+
+    <div class="hero">
+      <div>
+        <h1>Pan de Casa: bread baked every morning</h1>
+        <p>Sourdough, croissants and pastries from our corner oven since 1998.</p>
+      </div>
+      <img src="../bread.svg" width="640" height="360" alt="A fresh loaf of sourdough bread and a croissant on a wooden board">
+    </div>
+
+    <div class="cols">
+      <section id="hours">
+        <h2>Opening hours</h2>
+        <table>
+          <tr><td>Monday</td><td>7:00 – 19:00</td></tr>
+          <tr><td>Tuesday</td><td>7:00 – 19:00</td></tr>
+          <tr><td>Wednesday</td><td>7:00 – 19:00</td></tr>
+          <tr><td>Thursday</td><td>7:00 – 19:00</td></tr>
+          <tr><td>Friday</td><td>7:00 – 20:00</td></tr>
+          <tr><td>Saturday</td><td>8:00 – 20:00</td></tr>
+          <tr><td>Sunday</td><td>8:00 – 14:00</td></tr>
+        </table>
+      </section>
+
+      <section id="menu">
+        <h2>Menu</h2>
+        <table>
+          <tr><td>Sourdough loaf</td><td>$6.50</td></tr>
+          <tr><td>Butter croissant</td><td>$3.20</td></tr>
+          <tr><td>Cinnamon roll</td><td>$3.80</td></tr>
+          <tr><td>Whole-wheat baguette</td><td>$4.00</td></tr>
+          <tr><td>Almond cake (slice)</td><td>$4.50</td></tr>
+          <tr><td>Coffee</td><td>$2.50</td></tr>
+        </table>
+      </section>
+    </div>
+
+    <section id="contact">
+      <h2>Contact us</h2>
+      <form onsubmit="event.preventDefault(); this.querySelector('button').textContent = 'Thanks! We will reply soon.';">
+        <label>Name <input name="name" required autocomplete="name"></label>
+        <label>Email <input name="email" type="email" required autocomplete="email"></label>
+        <label>Message <textarea name="message" rows="3" required></textarea></label>
+        <button type="submit">Send message</button>
+      </form>
+    </section>
+
+    <footer>Pan de Casa · Calle del Horno 12 · Demo delivery bundled with Handshake</footer>
+  </div>
+</body>
+</html>

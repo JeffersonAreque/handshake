@@ -1,8 +1,10 @@
 // Runs verifications one at a time (keeps memory low on small instances) and
 // moves money according to the result: capture on pass, nothing on fail.
+// Progress steps are published for the live timeline.
 import * as store from '../db.js';
 import { STATUS, transition } from '../status.js';
 import { trackMemory, memoryReport } from '../memory.js';
+import { publishStep } from '../bus.js';
 
 const RUN_TIMEOUT_MS = 3 * 60_000;
 
@@ -14,17 +16,22 @@ function withTimeout(promise, ms, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
-export function createVerifier({ db, paypal, ai, capture, allowPrivate = false, log = console }) {
+export function createVerifier({ db, money, ai, capture, allowPrivate = false, log = console }) {
   let chain = Promise.resolve();
 
-  /** Capture the authorized payment to the freelancer. Safe to retry. */
+  /** Capture the held payment to the freelancer. Safe to retry. */
   async function payout(milestoneId) {
     const m = await store.getMilestone(db, milestoneId);
     if (m.status !== STATUS.PASSED) return m;
+    const rail = money.for(m);
+    publishStep(m.id, rail.kind === 'simulated' ? 'Releasing the simulated hold…' : 'Capturing the PayPal payment…');
     try {
-      const result = await paypal.captureAuthorization(m.authorization_id);
+      const result = await rail.capture(m);
       if (result.status !== 'COMPLETED' && result.status !== 'PENDING') throw new Error(`Capture status ${result.status}`);
-      await transition(db, m.id, STATUS.PAID, { capture_id: result.id, last_error: null }, `Captured ${m.amount} ${m.currency} to ${m.payee_email}`);
+      const note = rail.kind === 'simulated'
+        ? `Simulated capture of ${m.amount} ${m.currency} (demo, no PayPal call)`
+        : `Captured ${m.amount} ${m.currency} to ${m.payee_email}`;
+      await transition(db, m.id, STATUS.PAID, { capture_id: result.id, last_error: null }, note);
     } catch (err) {
       log.error(`[payout] milestone ${m.id}: ${err.message}`);
       await store.updateMilestone(db, m.id, { last_error: `Payout failed: ${err.message}` });
@@ -37,12 +44,17 @@ export function createVerifier({ db, paypal, ai, capture, allowPrivate = false, 
     const submission = await store.getSubmission(db, submissionId);
     if (m.status === STATUS.SUBMITTED) await transition(db, m.id, STATUS.VERIFYING, {}, `Verifying attempt ${submission.attempt}`);
     else if (m.status !== STATUS.VERIFYING) return;
+    const step = (s) => publishStep(m.id, s);
 
     let report;
     try {
       report = await withTimeout(
         (async () => {
-          const { checks, images } = await trackMemory(`verify ${m.id}/${submission.id}`, () => capture(submission.url, { allowPrivate }));
+          step('Opening the page in a headless browser…');
+          const { checks, images } = await trackMemory(`verify ${m.id}/${submission.id}`, () =>
+            capture(submission.url, { allowPrivate, onStep: step })
+          );
+          step(`Asking ${ai.provider === 'gemini' ? 'Gemini' : 'the verifier'} to check ${m.criteria.length} criteria…`);
           const verdicts = await ai.judge({ criteria: m.criteria, checks, images });
           return { checks, images, verdicts, error: null };
         })(),
@@ -60,6 +72,7 @@ export function createVerifier({ db, paypal, ai, capture, allowPrivate = false, 
     const passed = report.verdicts.length > 0 && report.verdicts.every((v) => v.pass === true);
     let fixes = [];
     if (!passed && !report.error) {
+      step('Writing a fix list for the freelancer…');
       try {
         fixes = await ai.fixList({ criteria: m.criteria, verdicts: report.verdicts, checks: report.checks });
       } catch (err) {

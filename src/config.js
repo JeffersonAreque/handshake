@@ -24,6 +24,14 @@ export const config = {
     model: (env.AI_MODEL || '').trim() || undefined, // gemini default: gemini-2.5-flash
     apiKey: (env.GEMINI_API_KEY || '').trim(),
   },
+  demo: {
+    // Sandbox business account that receives "Try as client" payments.
+    payeeEmail: (env.DEMO_PAYEE_EMAIL || '').trim(),
+    // Optional sandbox buyer login shown on demo pages so judges can pay.
+    buyerEmail: (env.DEMO_BUYER_EMAIL || '').trim(),
+    buyerPassword: env.DEMO_BUYER_PASSWORD || '',
+    seed: env.SEED_DEMO !== 'false',
+  },
   // Local development only: lets the verifier open localhost / private URLs.
   allowPrivateUrls: env.ALLOW_PRIVATE_URLS === 'true',
 };
@@ -39,5 +47,8 @@ export function describeConfig() {
     aiModel: config.ai.model ?? 'default',
     geminiKeySet: Boolean(config.ai.apiKey),
     allowPrivateUrls: config.allowPrivateUrls,
+    demoClient: Boolean(config.demo.payeeEmail),
+    demoBuyerShown: Boolean(config.demo.buyerEmail),
+    seedDemo: config.demo.seed,
   };
 }

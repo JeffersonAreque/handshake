@@ -3,6 +3,8 @@
 // The UPDATE and its event row run in one atomic batch, so two concurrent
 // requests can't both move money from the same state.
 
+import { publishStatus } from './bus.js';
+
 export const STATUS = Object.freeze({
   DRAFT: 'DRAFT',
   FUNDED: 'FUNDED',
@@ -62,4 +64,5 @@ export async function transition(db, id, to, fields = {}, note = null) {
     const status = res.rows[0]?.[0];
     throw new TransitionError(status ? `Cannot go from ${status} to ${to}` : `Milestone ${id} not found`);
   }
+  publishStatus(id, to);
 }

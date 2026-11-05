@@ -1,4 +1,17 @@
   </main>
-  <footer class="foot">Handshake: milestone escrow with AI verification. Sandbox demo, no real money.</footer>
+  <footer class="site-footer">
+    <div class="container">
+      <span>Handshake: milestone escrow with AI verification. PayPal sandbox only, no real money.</span>
+      <span>PayPal Orders v2 (AUTHORIZE → capture / void / refund) · Gemini · Playwright</span>
+    </div>
+  </footer>
+  <script>
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      const root = document.documentElement;
+      const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      root.dataset.theme = dark ? 'light' : 'dark';
+      try { localStorage.setItem('theme', root.dataset.theme); } catch {}
+    });
+  </script>
 </body>
 </html>

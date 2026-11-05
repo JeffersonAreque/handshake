@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="t">
+  <title id="t">Illustration of a loaf of bread and a croissant on a wooden board</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf3e3"/><stop offset="1" stop-color="#f6e1c2"/></linearGradient>
+    <linearGradient id="crust" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9893b"/><stop offset="1" stop-color="#a65a1d"/></linearGradient>
+    <linearGradient id="crois" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0b25c"/><stop offset="1" stop-color="#c47a2c"/></linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <rect x="70" y="250" width="500" height="34" rx="17" fill="#9b6a3f"/>
+  <rect x="70" y="250" width="500" height="10" rx="5" fill="#b5814f"/>
+  <path d="M110 250 C110 150 200 120 300 120 C400 120 450 160 450 250 Z" fill="url(#crust)"/>
+  <path d="M170 170 q20 -14 40 0 M230 150 q20 -14 40 0 M290 145 q20 -14 40 0 M350 152 q20 -14 40 0" stroke="#f7d29b" stroke-width="9" fill="none" stroke-linecap="round"/>
+  <g transform="translate(470 200) rotate(-12)">
+    <path d="M-70 40 C-60 -20 60 -20 70 40 C40 20 -40 20 -70 40 Z" fill="url(#crois)"/>
+    <path d="M-35 18 L-28 -10 M0 12 L0 -18 M35 18 L28 -10" stroke="#a8641f" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <circle cx="520" cy="80" r="34" fill="#fff6e6" opacity=".8"/>
+</svg>

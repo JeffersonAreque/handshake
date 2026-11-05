@@ -84,6 +84,10 @@ export async function openDb({ url, authToken } = {}) {
 const MIGRATIONS = [
   'ALTER TABLE reports ADD COLUMN fixes TEXT',
   'ALTER TABLE milestones ADD COLUMN brief TEXT',
+  // 'paypal' (real sandbox money) or 'simulated' (one-click freelancer demo)
+  "ALTER TABLE milestones ADD COLUMN funding TEXT NOT NULL DEFAULT 'paypal'",
+  // null for real milestones; 'try' (created by a demo button) or 'showcase' (seeded, read-only)
+  'ALTER TABLE milestones ADD COLUMN demo_kind TEXT',
 ];
 
 /** Converts a libsql result to plain row objects. */
@@ -108,9 +112,9 @@ export async function createMilestone(db, m) {
   const [ins] = await db.batch(
     [
       q(
-        `INSERT INTO milestones (client_token, freelancer_token, title, description, amount, currency, payee_email, criteria, is_demo, brief)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [m.clientToken, m.freelancerToken, m.title, m.description ?? '', m.amount, m.currency ?? 'USD', m.payeeEmail, JSON.stringify(m.criteria), m.isDemo ? 1 : 0, m.brief || null]
+        `INSERT INTO milestones (client_token, freelancer_token, title, description, amount, currency, payee_email, criteria, is_demo, brief, funding, demo_kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [m.clientToken, m.freelancerToken, m.title, m.description ?? '', m.amount, m.currency ?? 'USD', m.payeeEmail, JSON.stringify(m.criteria), m.demoKind ? 1 : 0, m.brief || null, m.funding ?? 'paypal', m.demoKind ?? null]
       ),
       q("INSERT INTO events (milestone_id, status, note) VALUES (last_insert_rowid(), 'DRAFT', 'Milestone created')"),
     ],
@@ -216,6 +220,26 @@ export async function getReport(db, milestoneId, reportId) {
 
 export const listEvents = async (db, milestoneId) =>
   toRows(await db.execute(q('SELECT * FROM events WHERE milestone_id = ? ORDER BY id', [milestoneId])));
+
+export const listShowcase = async (db) =>
+  toRows(await db.execute("SELECT * FROM milestones WHERE demo_kind = 'showcase' ORDER BY id")).map(parseMilestone);
+
+/** Deletes 'try' demo milestones older than `hours` (and everything they own). */
+export async function deleteOldDemos(db, hours = 24) {
+  const old = "SELECT id FROM milestones WHERE demo_kind = 'try' AND created_at < datetime('now', ?)";
+  const args = [`-${hours} hours`];
+  const [, , , , gone] = await db.batch(
+    [
+      q(`DELETE FROM screenshots WHERE submission_id IN (SELECT id FROM submissions WHERE milestone_id IN (${old}))`, args),
+      q(`DELETE FROM reports WHERE milestone_id IN (${old})`, args),
+      q(`DELETE FROM submissions WHERE milestone_id IN (${old})`, args),
+      q(`DELETE FROM events WHERE milestone_id IN (${old})`, args),
+      q("DELETE FROM milestones WHERE demo_kind = 'try' AND created_at < datetime('now', ?)", args),
+    ],
+    'write'
+  );
+  return gone.rowsAffected;
+}
 
 export const countReports = async (db, milestoneId) =>
   Number(first(await db.execute(q('SELECT COUNT(*) AS n FROM reports WHERE milestone_id = ?', [milestoneId]))).n);

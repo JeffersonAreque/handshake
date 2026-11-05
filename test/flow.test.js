@@ -6,6 +6,9 @@ import { openDb, getMilestone, toRows, countReports } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { createVerifier } from '../src/verifier/service.js';
 import { createAi } from '../src/ai/index.js';
+import { createMoney } from '../src/money.js';
+import { seedShowcase, createDemoMilestone } from '../src/demo.js';
+import { deleteOldDemos, listShowcase } from '../src/db.js';
 
 const mockAi = createAi({ provider: 'mock' });
 
@@ -17,6 +20,7 @@ function fakePayPal() {
     authorizeOrder: async (id) => { calls.push(['authorize', id]); return { id: 'AUTH1', status: 'CREATED', amount: { value: '25.00' } }; },
     captureAuthorization: async (id) => { calls.push(['capture', id]); return { id: 'CAP1', status: 'COMPLETED' }; },
     voidAuthorization: async (id) => { calls.push(['void', id]); return { id, status: 'VOIDED' }; },
+    refundCapture: async (id) => { calls.push(['refund', id]); return { id: 'REF1', status: 'COMPLETED' }; },
   };
 }
 
@@ -24,16 +28,17 @@ const goodPage = { httpStatus: 200, consoleErrors: [], pageErrors: [], failedReq
 const brokenPage = { ...goodPage, pageErrors: ['TypeError: x is undefined'] };
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]);
 
-async function setup(pages) {
+async function setup(pages, { demo = { payeeEmail: 'demo-payee@example.com' } } = {}) {
   const db = await openDb({ url: ':memory:' });
   const paypal = fakePayPal();
+  const money = createMoney(paypal);
   const capture = async (url) => ({
     checks: { url, ...(pages[url] ?? goodPage) },
     images: [{ label: 'desktop', data: JPEG }, { label: 'mobile', data: JPEG }],
   });
-  const verifier = createVerifier({ db, paypal, ai: mockAi, capture, log: { error() {} } });
-  const config = { baseUrl: 'http://test', paypal: { clientId: 'cid' }, allowPrivateUrls: false, storage: 'memory' };
-  const app = createApp({ db, paypal, verifier, ai: mockAi, config });
+  const verifier = createVerifier({ db, money, ai: mockAi, capture, log: { error() {} } });
+  const config = { baseUrl: 'https://93.184.216.34', paypal: { clientId: 'cid' }, allowPrivateUrls: false, storage: 'memory', demo };
+  const app = createApp({ db, paypal, money, verifier, ai: mockAi, config });
   const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const form = (path, data) => fetch(base + path, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(data) });
@@ -46,7 +51,7 @@ async function setup(pages) {
   assert.equal(created.status, 303);
   const clientToken = created.headers.get('location').split('/').pop();
   const [row] = toRows(await db.execute({ sql: 'SELECT * FROM milestones WHERE client_token = ?', args: [clientToken] }));
-  return { db, paypal, verifier, server, base, form, json, m: { ...row, id: Number(row.id) } };
+  return { db, paypal, money, verifier, server, base, form, json, m: { ...row, id: Number(row.id) } };
 }
 
 const fund = async ({ json, m }) => {
@@ -95,6 +100,126 @@ test('create → fund → submit → pass → paid to the freelancer', async (t)
   assert.equal((await fetch(`${base}/e/${m.client_token}/${sid}/mobile.jpg`)).status, 200);
   assert.equal((await fetch(`${base}/e/not-a-token/${sid}/mobile.jpg`)).status, 404);
   assert.equal((await fetch(`${base}/e/${m.client_token}/${sid}/..%2Fsecret.jpg`)).status, 404);
+});
+
+test('client can refund after payout, only once and only when PAID', async (t) => {
+  const ctx = await setup({});
+  const { db, paypal, verifier, server, form, m } = ctx;
+  t.after(() => server.close());
+  assert.equal((await form(`/c/${m.client_token}/refund`, {})).status, 409, 'no refund before payment');
+  await fund(ctx);
+  await form(`/f/${m.freelancer_token}/submit`, { url: 'https://93.184.216.34/' });
+  await verifier.idle();
+  assert.equal((await getMilestone(db, m.id)).status, 'PAID');
+  assert.equal((await form(`/f/${m.freelancer_token}/refund`, {})).status, 404, 'freelancer cannot refund');
+  assert.equal((await form(`/c/${m.client_token}/refund`, {})).status, 303);
+  const after = await getMilestone(db, m.id);
+  assert.equal(after.status, 'REFUNDED');
+  assert.equal(after.refund_id, 'REF1');
+  assert.deepEqual(paypal.calls.filter((c) => c[0] === 'refund'), [['refund', 'CAP1']]);
+  assert.equal((await form(`/c/${m.client_token}/refund`, {})).status, 409, 'cannot refund twice');
+});
+
+test('one-click freelancer demo: simulated hold, real verification, never calls PayPal', async (t) => {
+  const ctx = await setup({});
+  const { db, paypal, verifier, server, base, form } = ctx;
+  t.after(() => server.close());
+  const calls = paypal.calls.length;
+  const res = await form('/demo/freelancer', {});
+  assert.equal(res.status, 303);
+  const ftoken = res.headers.get('location').split('/').pop();
+  const page = await (await fetch(`${base}/f/${ftoken}`)).text();
+  assert.match(page, /simulated PayPal hold/);
+  assert.match(page, /Good site/);
+  const [row] = toRows(await db.execute({ sql: 'SELECT * FROM milestones WHERE freelancer_token = ?', args: [ftoken] }));
+  assert.equal(row.status, 'FUNDED');
+  assert.equal(row.funding, 'simulated');
+  assert.match(row.authorization_id, /^SIM-AUTH-/);
+
+  await form(`/f/${ftoken}/submit`, { url: 'https://93.184.216.34/demo-sites/good/' });
+  await verifier.idle();
+  const paid = await getMilestone(db, Number(row.id));
+  assert.equal(paid.status, 'PAID');
+  assert.match(paid.capture_id, /^SIM-CAPTURE-/);
+  assert.equal((await form(`/c/${row.client_token}/refund`, {})).status, 303);
+  assert.equal((await getMilestone(db, Number(row.id))).status, 'REFUNDED');
+  assert.equal(paypal.calls.length, calls, 'no PayPal calls for simulated milestones');
+  // A simulated milestone can never create a real PayPal order.
+  assert.equal((await ctx.json(`/api/c/${row.client_token}/order`)).status, 409);
+});
+
+test('one-click client demo uses real PayPal with the configured payee, or is disabled', async (t) => {
+  const ctx = await setup({});
+  t.after(() => ctx.server.close());
+  const res = await ctx.form('/demo/client', {});
+  assert.equal(res.status, 303);
+  const ctoken = res.headers.get('location').split('/').pop();
+  const [row] = toRows(await ctx.db.execute({ sql: 'SELECT * FROM milestones WHERE client_token = ?', args: [ctoken] }));
+  assert.deepEqual([row.status, row.funding, row.payee_email, row.demo_kind], ['DRAFT', 'paypal', 'demo-payee@example.com', 'try']);
+  assert.equal((await ctx.form('/demo/nope', {})).status, 404);
+
+  const off = await setup({}, { demo: {} });
+  t.after(() => off.server.close());
+  assert.equal((await off.form('/demo/client', {})).status, 503);
+});
+
+test('showcase is seeded once, verified, and read-only', async (t) => {
+  const ctx = await setup({ 'https://93.184.216.34/demo-sites/broken/': brokenPage });
+  const { db, money, verifier, server, form, base } = ctx;
+  t.after(() => server.close());
+  const seed = () => seedShowcase({ db, money, verifier, baseUrl: 'https://93.184.216.34', wait: async () => true, log: { log() {}, error() {} } });
+  await seed();
+  await seed();
+  await verifier.idle();
+  const showcase = await listShowcase(db);
+  assert.equal(showcase.length, 2);
+  assert.deepEqual(showcase.map((m) => m.status), ['PAID', 'FAILED']);
+  const failed = showcase[1];
+  assert.equal((await form(`/f/${failed.freelancer_token}/submit`, { url: 'https://93.184.216.34/' })).status, 403);
+  assert.equal((await form(`/c/${failed.client_token}/void`, {})).status, 403);
+  assert.equal((await form(`/c/${showcase[0].client_token}/refund`, {})).status, 403);
+  assert.match(await (await fetch(`${base}/`)).text(), /See finished examples/);
+});
+
+test('old try-demos are cleaned up; real and showcase milestones are kept', async (t) => {
+  const ctx = await setup({});
+  const { db, money, server, m } = ctx;
+  t.after(() => server.close());
+  const old = await createDemoMilestone(db, money, { kind: 'freelancer' });
+  await createDemoMilestone(db, money, { kind: 'freelancer' });
+  await createDemoMilestone(db, money, { kind: 'freelancer', demoKind: 'showcase' });
+  await db.execute({ sql: "UPDATE milestones SET created_at = datetime('now', '-2 days') WHERE id IN (?, ?)", args: [old.id, m.id] });
+  assert.equal(await deleteOldDemos(db, 24), 1);
+  assert.equal(await getMilestone(db, old.id), null);
+  assert.ok(await getMilestone(db, m.id), 'real milestone kept even if old');
+});
+
+test('live endpoint streams status changes over SSE', async (t) => {
+  const ctx = await setup({});
+  const { server, base, m } = ctx;
+  t.after(() => server.close());
+  const ac = new AbortController();
+  const res = await fetch(`${base}/live/${m.client_token}`, { signal: ac.signal });
+  assert.match(res.headers.get('content-type'), /^text\/event-stream/);
+  const reader = res.body.getReader();
+  const seen = [];
+  const readUntil = async (pred) => {
+    const dec = new TextDecoder();
+    let buf = '';
+    while (!pred()) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      for (const chunk of buf.split('\n\n').slice(0, -1)) if (chunk.startsWith('data: ')) seen.push(JSON.parse(chunk.slice(6)));
+      buf = buf.split('\n\n').pop();
+    }
+  };
+  await readUntil(() => seen.length >= 1);
+  assert.deepEqual(seen[0], { type: 'hello', status: 'DRAFT', step: null });
+  await fund(ctx);
+  await readUntil(() => seen.some((e) => e.status === 'FUNDED'));
+  ac.abort();
+  assert.equal((await fetch(`${base}/live/nope`)).status, 404);
 });
 
 test('fail → resubmit → client voids; nothing is captured', async (t) => {
@@ -161,7 +286,7 @@ test('a restart mid-verification resumes and still pays out', async (t) => {
   await db.execute({ sql: "UPDATE milestones SET status = 'VERIFYING' WHERE id = ?", args: [m.id] });
   await db.execute({ sql: "INSERT INTO submissions (milestone_id, url, attempt) VALUES (?, 'https://93.184.216.34/', 1)", args: [m.id] });
   const capture = async (url) => ({ checks: { url, ...goodPage }, images: [] });
-  const fresh = createVerifier({ db, paypal, ai: mockAi, capture, log: { error() {} } });
+  const fresh = createVerifier({ db, money: ctx.money, ai: mockAi, capture, log: { error() {} } });
   await fresh.recover();
   await fresh.idle();
   assert.equal((await getMilestone(db, m.id)).status, 'PAID');

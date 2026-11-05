@@ -1,0 +1,20 @@
+<%
+  const icon = { done: '✓', failed: '✕' };
+  const fmt = (at) => at ? new Date(at.replace(' ', 'T') + 'Z').toISOString().slice(11, 16) + ' UTC' : '';
+%>
+<section class="card" aria-label="Milestone progress">
+  <ol class="timeline">
+    <% timeline.steps.forEach((s, i) => { %>
+      <li class="<%= s.state %>" aria-current="<%= ['current', 'active'].includes(s.state) ? 'step' : 'false' %>">
+        <span class="dot"><%= icon[s.state] || (i + 1) %></span>
+        <span class="label"><%= s.state === 'failed' ? 'Changes needed' : s.label %></span>
+        <span class="sub"><%= s.at ? fmt(s.at) : (s.state === 'current' ? 'Waiting' : s.state === 'active' ? 'In progress…' : s.hint) %></span>
+      </li>
+    <% }) %>
+  </ol>
+  <div class="live" id="live" <%= busy ? '' : 'hidden' %> role="status" aria-live="polite">
+    <span class="spinner" aria-hidden="true"></span>
+    <span id="live-step"><%= step || 'Starting verification…' %></span>
+  </div>
+  <% if (timeline.outcome) { %><div class="outcome <%= timeline.outcome.kind %>"><%= timeline.outcome.label %></div><% } %>
+</section>

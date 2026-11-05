@@ -1,12 +1,13 @@
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
-import { memoryReport } from './memory.js';
 import express from 'express';
+import { memoryReport } from './memory.js';
 import * as store from './db.js';
 import { STATUS, transition, TransitionError } from './status.js';
 import { assertPublicUrl, UnsafeUrlError } from './urlSafety.js';
+import { buildTimeline } from './timeline.js';
+import { bus, currentStep } from './bus.js';
+import { DEMO, createDemoMilestone, demoSiteUrl, newToken } from './demo.js';
 
-const newToken = () => randomBytes(18).toString('base64url');
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/i;
 
 export function validateMilestoneInput(body) {
@@ -43,24 +44,30 @@ export function rateLimiter({ limit, windowMs }) {
   };
 }
 
-export function createApp({ db, paypal, verifier, ai, config }) {
+export function createApp({ db, paypal, money, verifier, ai, config }) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // Render terminates TLS in front of us
   const draftLimit = rateLimiter({ limit: 8, windowMs: 10 * 60_000 });
+  const demoLimit = rateLimiter({ limit: 12, windowMs: 60 * 60_000 });
+  const demo = config.demo ?? {};
   app.set('view engine', 'ejs');
   app.set('views', path.resolve('views'));
   app.use((req, res, next) => {
     // Secret links live in the URL: never leak them through Referer.
-    res.set({ 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY' });
+    res.set({ 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' });
+    if (!req.path.startsWith('/demo-sites/')) res.set('X-Frame-Options', 'DENY');
     next();
   });
   app.use(express.static(path.resolve('public'), { maxAge: '1h' }));
   app.use(express.urlencoded({ extended: false, limit: '20kb' }));
   app.use(express.json({ limit: '20kb' }));
-  app.locals.baseUrl = config.baseUrl;
-  app.locals.aiProvider = ai.provider;
-  app.locals.aiModel = ai.model;
+  Object.assign(app.locals, {
+    baseUrl: config.baseUrl,
+    aiProvider: ai.provider,
+    aiModel: ai.model,
+    demo: { buyerEmail: demo.buyerEmail, buyerPassword: demo.buyerPassword, clientEnabled: Boolean(demo.payeeEmail) },
+  });
 
   const load = async (req, res, role) => {
     const found = await store.getMilestoneByToken(db, req.params.token);
@@ -78,10 +85,20 @@ export function createApp({ db, paypal, verifier, ai, config }) {
       m: milestone,
       role,
       ...view,
+      timeline: buildTimeline(milestone.status, view.events),
+      step: currentStep(milestone.id),
+      demoSites: { good: demoSiteUrl(config.baseUrl, 'good'), broken: demoSiteUrl(config.baseUrl, 'broken') },
       paypalClientId: config.paypal.clientId,
       error: null,
       ...extra,
     });
+  };
+
+  // Seeded showcase milestones can be viewed but never changed.
+  const readOnly = async (res, found) => {
+    if (found.milestone.demo_kind !== 'showcase') return false;
+    await renderMilestone(res.status(403), found, { error: 'This is a read-only showcase. Use “Try as client” or “Try as freelancer” to run your own.' });
+    return true;
   };
 
   app.get('/healthz', (req, res) => {
@@ -105,11 +122,24 @@ export function createApp({ db, paypal, verifier, ai, config }) {
     }
   });
 
-  app.get('/', (req, res) => res.render('landing', { title: 'Handshake' }));
+  app.get('/', async (req, res) => {
+    const showcase = await store.listShowcase(db).catch(() => []);
+    res.render('landing', { title: 'Handshake', showcase, criteria: DEMO.criteria });
+  });
 
   app.get('/new', (req, res) =>
     res.render('new', { title: 'New milestone', errors: [], form: { amount: '25.00' } })
   );
+
+  // ----- One-click demo -----
+  app.post('/demo/:kind', async (req, res) => {
+    const kind = req.params.kind;
+    if (kind !== 'client' && kind !== 'freelancer') return res.status(404).render('error', { title: 'Not found', message: 'Page not found.' });
+    if (kind === 'client' && !demo.payeeEmail) return res.status(503).render('error', { title: 'Demo unavailable', message: 'The client demo is not configured on this server (DEMO_PAYEE_EMAIL).' });
+    if (!demoLimit(req.ip)) return res.status(429).render('error', { title: 'Slow down', message: 'You started a lot of demos. Please wait a few minutes.' });
+    const m = await createDemoMilestone(db, money, { kind, payeeEmail: demo.payeeEmail });
+    res.redirect(303, kind === 'client' ? `/c/${m.client_token}` : `/f/${m.freelancer_token}`);
+  });
 
   // AI drafts measurable criteria from a plain brief; the client edits them
   // in the form before creating (and then funding) the milestone.
@@ -133,6 +163,21 @@ export function createApp({ db, paypal, verifier, ai, config }) {
     res.redirect(303, `/c/${m.client_token}`);
   });
 
+  // ----- Live progress (Server-Sent Events) for both roles -----
+  app.get('/live/:token', async (req, res) => {
+    const found = await store.getMilestoneByToken(db, req.params.token);
+    if (!found) return res.status(404).end();
+    const id = found.milestone.id;
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+    res.flushHeaders();
+    const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    send({ type: 'hello', status: found.milestone.status, step: currentStep(id) });
+    const onEvent = (e) => send(e);
+    bus.on(`m:${id}`, onEvent);
+    const ping = setInterval(() => res.write(': ping\n\n'), 20_000);
+    req.on('close', () => { clearInterval(ping); bus.off(`m:${id}`, onEvent); });
+  });
+
   // ----- Client -----
   app.get('/c/:token', async (req, res) => {
     const found = await load(req, res, 'client');
@@ -143,7 +188,7 @@ export function createApp({ db, paypal, verifier, ai, config }) {
     const found = await store.getMilestoneByToken(db, req.params.token);
     if (!found || found.role !== 'client') return res.status(404).json({ error: 'Not found' });
     const m = found.milestone;
-    if (m.status !== STATUS.DRAFT) return res.status(409).json({ error: `Milestone is ${m.status}` });
+    if (m.status !== STATUS.DRAFT || m.funding !== 'paypal') return res.status(409).json({ error: `Milestone is ${m.status}` });
     try {
       const order = await paypal.createOrder({
         amount: m.amount,
@@ -180,15 +225,16 @@ export function createApp({ db, paypal, verifier, ai, config }) {
 
   app.post('/c/:token/void', async (req, res) => {
     const found = await load(req, res, 'client');
-    if (!found) return;
+    if (!found || (await readOnly(res, found))) return;
     const m = found.milestone;
     if (m.status !== STATUS.FUNDED && m.status !== STATUS.FAILED) {
       return renderMilestone(res.status(409), found, { error: `You can’t cancel a milestone that is ${m.status}.` });
     }
     try {
-      const auth = await paypal.voidAuthorization(m.authorization_id);
+      const rail = money.for(m);
+      const auth = await rail.void(m);
       if (auth.status !== 'VOIDED') throw new Error(`Authorization status ${auth.status}`);
-      await transition(db, m.id, STATUS.VOIDED, { last_error: null }, 'Client cancelled; hold released');
+      await transition(db, m.id, STATUS.VOIDED, { last_error: null }, rail.kind === 'simulated' ? 'Client cancelled; simulated hold released' : 'Client cancelled; hold released');
       res.redirect(303, `/c/${m.client_token}`);
     } catch (err) {
       console.error(`[void] milestone ${m.id}: ${err.message}`);
@@ -196,9 +242,30 @@ export function createApp({ db, paypal, verifier, ai, config }) {
     }
   });
 
+  app.post('/c/:token/refund', async (req, res) => {
+    const found = await load(req, res, 'client');
+    if (!found || (await readOnly(res, found))) return;
+    const m = found.milestone;
+    if (m.status !== STATUS.PAID || !m.capture_id) {
+      return renderMilestone(res.status(409), found, { error: `Only a paid milestone can be refunded (this one is ${m.status}).` });
+    }
+    try {
+      const rail = money.for(m);
+      const refund = await rail.refund(m);
+      if (refund.status !== 'COMPLETED' && refund.status !== 'PENDING') throw new Error(`Refund status ${refund.status}`);
+      await transition(db, m.id, STATUS.REFUNDED, { refund_id: refund.id, last_error: null },
+        rail.kind === 'simulated' ? `Simulated refund of ${m.amount} ${m.currency} (demo)` : `Refunded ${m.amount} ${m.currency} to the client${refund.status === 'PENDING' ? ' (pending)' : ''}`);
+      res.redirect(303, `/c/${m.client_token}`);
+    } catch (err) {
+      console.error(`[refund] milestone ${m.id}: ${err.message}`);
+      await store.updateMilestone(db, m.id, { last_error: `Refund failed: ${err.message}` });
+      await renderMilestone(res.status(502), { ...found, milestone: await store.getMilestone(db, m.id) }, { error: 'PayPal could not refund this payment. Please try again.' });
+    }
+  });
+
   app.post('/c/:token/payout', async (req, res) => {
     const found = await load(req, res, 'client');
-    if (!found) return;
+    if (!found || (await readOnly(res, found))) return;
     await verifier.payout(found.milestone.id);
     res.redirect(303, `/c/${found.milestone.client_token}`);
   });
@@ -211,7 +278,7 @@ export function createApp({ db, paypal, verifier, ai, config }) {
 
   app.post('/f/:token/submit', async (req, res) => {
     const found = await load(req, res, 'freelancer');
-    if (!found) return;
+    if (!found || (await readOnly(res, found))) return;
     const m = found.milestone;
     let url;
     try {
@@ -257,6 +324,7 @@ export function createApp({ db, paypal, verifier, ai, config }) {
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     console.error(`[error] ${req.method} ${req.path}: ${err.message}`);
+    if (res.headersSent) return res.end();
     res.status(500).render('error', { title: 'Error', message: 'Something went wrong.' });
   });
   return app;

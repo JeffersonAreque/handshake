@@ -1,35 +1,43 @@
 <%- include('partials/head', { title }) %>
-<h1>New milestone</h1>
+<div class="page-head">
+  <div>
+    <span class="eyebrow">Client</span>
+    <h1>New milestone</h1>
+    <p class="muted" style="margin:0">Describe the work, let the AI draft acceptance criteria, edit them, then fund with PayPal.</p>
+  </div>
+</div>
 <% if (errors.length) { %>
-  <div class="alert error"><% errors.forEach(e => { %><div><%= e %></div><% }) %></div>
+  <div class="alert error" role="alert"><div><% errors.forEach(e => { %><div><%= e %></div><% }) %></div></div>
 <% } %>
-<form method="post" action="/milestones" class="card form">
-  <label>Title
+<form method="post" action="/milestones" class="card">
+  <label class="field"><span>Title</span>
     <input name="title" required maxlength="120" value="<%= form.title || '' %>" placeholder="Landing page for my bakery">
   </label>
-  <label>Description <span class="muted">(optional)</span>
-    <textarea name="description" rows="2" maxlength="2000" placeholder="What is being delivered"><%= form.description || '' %></textarea>
-  </label>
-  <div class="row">
-    <label>Amount (USD)
+  <div class="form-row">
+    <label class="field"><span>Amount (USD)</span>
       <input name="amount" required inputmode="decimal" value="<%= form.amount || '' %>">
     </label>
-    <label>Freelancer’s PayPal email
+    <label class="field"><span>Freelancer’s PayPal email</span>
       <input name="payeeEmail" type="email" required value="<%= form.payeeEmail || '' %>" placeholder="freelancer@example.com">
-      <small class="muted">Use a PayPal <b>sandbox business</b> account email. Captured funds go here.</small>
+      <span class="hint">A PayPal <b>sandbox business</b> account. Captured funds are paid to this account.</span>
     </label>
   </div>
-  <label>Brief <span class="muted">(plain language: what you want delivered)</span>
-    <textarea id="brief" name="brief" rows="3" maxlength="2000" placeholder="A one-page website for my bakery 'Pan de Casa' with our opening hours, a photo of our bread, a menu with prices and a contact form."><%= form.brief || '' %></textarea>
+  <label class="field"><span>Brief</span>
+    <textarea id="brief" name="brief" rows="3" maxlength="2000" placeholder="A one-page website for my bakery “Pan de Casa” with our opening hours, a photo of our bread, a menu with prices and a contact form."><%= form.brief || '' %></textarea>
+    <span class="hint">Plain language. What do you want delivered?</span>
   </label>
-  <div class="draft-row">
-    <button class="btn" type="button" id="draft-btn">✨ Draft criteria with AI</button>
-    <span id="draft-msg" class="muted" role="status"></span>
+  <div class="ai-assist">
+    <button class="btn btn-sm btn-primary" type="button" id="draft-btn">✨ Draft criteria with AI</button>
+    <span id="draft-msg" role="status">Gemini turns your brief into criteria it can check from screenshots.</span>
   </div>
-  <label>Acceptance criteria <span class="muted">(one per line, edit freely; these are what the verifier checks)</span>
-    <textarea id="criteria" name="criteria" rows="6" required placeholder="The page shows the bakery name and a hero image&#10;There is a contact form with name, email and message&#10;The layout works on mobile with no horizontal scrolling"><%= form.criteria || '' %></textarea>
+  <label class="field"><span>Acceptance criteria</span>
+    <textarea id="criteria" name="criteria" rows="7" required placeholder="The page shows the bakery name and a photo of bread&#10;There is a contact form with name, email and message fields&#10;On mobile the layout fits the screen without horizontal scrolling"><%= form.criteria || '' %></textarea>
+    <span class="hint">One per line. These are exactly what the verifier checks, so edit freely before funding.</span>
   </label>
-  <button class="btn primary" type="submit">Create milestone</button>
+  <label class="field"><span>Description <span class="muted">(optional)</span></span>
+    <textarea name="description" rows="2" maxlength="2000"><%= form.description || '' %></textarea>
+  </label>
+  <button class="btn btn-primary btn-lg" type="submit">Create milestone</button>
 </form>
 <script>
   (function () {
@@ -46,7 +54,7 @@
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || 'Could not draft criteria.');
         criteria.value = d.criteria.join('\n');
-        msg.textContent = 'Drafted by ' + d.model + '. Review and edit before creating the milestone.';
+        msg.textContent = 'Drafted by ' + d.model + '. Review and edit them below.';
         criteria.focus();
       } catch (e) { msg.textContent = e.message; } finally { btn.disabled = false; }
     });

@@ -1,13 +1,61 @@
+<%
+  const labels = { DRAFT: 'Waiting for payment', FUNDED: 'Funded', SUBMITTED: 'Submitted', VERIFYING: 'Verifying…', PASSED: 'Passed', FAILED: 'Changes needed', PAID: 'Paid', VOIDED: 'Cancelled', REFUNDED: 'Refunded' };
+%>
 <%- include('partials/head', { title }) %>
 <section class="hero">
-  <h1>Get paid when the work is verified.</h1>
-  <p class="lead">The client holds the milestone payment in PayPal. An AI verifier opens the delivered URL, checks every acceptance criterion, and the payment goes to the freelancer only when all of them pass.</p>
-  <a class="btn primary" href="/new">Create a milestone</a>
+  <span class="eyebrow">Milestone escrow · PayPal + AI verification</span>
+  <h1>Get paid when the work is <em>verified</em>.</h1>
+  <p class="lead">The client’s payment is <b>held</b> in PayPal, not charged. When the freelancer delivers a URL, an AI verifier opens it, checks every acceptance criterion with screenshots as evidence, and the payment is captured to the freelancer only if all of them pass.</p>
+
+  <div class="try-grid" id="try">
+    <div class="try-card">
+      <h3>Try as client</h3>
+      <p>Fund a demo milestone with real PayPal sandbox checkout, then watch it get verified and paid.</p>
+      <% if (demo.clientEnabled) { %>
+        <form method="post" action="/demo/client"><button class="btn btn-primary btn-block" type="submit">Start as client →</button></form>
+      <% } else { %>
+        <button class="btn btn-block" type="button" disabled>Client demo not configured</button>
+      <% } %>
+    </div>
+    <div class="try-card">
+      <h3>Try as freelancer</h3>
+      <p>Skip checkout: get a funded demo milestone (simulated hold), submit the good or broken demo site and see the AI verdict.</p>
+      <form method="post" action="/demo/freelancer"><button class="btn btn-primary btn-block" type="submit">Start as freelancer →</button></form>
+    </div>
+  </div>
+  <p class="small muted" style="margin-top:12px">Or <a href="/new">create your own milestone</a> with an AI-drafted list of acceptance criteria.</p>
 </section>
-<ol class="steps">
-  <li><b>Fund</b> The client pays with PayPal. The money is authorized (held), not charged.</li>
-  <li><b>Submit</b> The freelancer submits a URL to the work.</li>
-  <li><b>Verify</b> The verifier takes screenshots and checks each criterion.</li>
-  <li><b>Pay</b> Pass: the payment is captured to the freelancer. Fail: the freelancer can resubmit, or the client can cancel.</li>
-</ol>
+
+<section class="section" id="how">
+  <h2>How it works</h2>
+  <ol class="steps">
+    <li><b>Agree &amp; fund</b><span>The client writes a brief; Gemini drafts measurable criteria. The client pays with PayPal in <code>AUTHORIZE</code> mode, so the money is held, not charged.</span></li>
+    <li><b>Deliver</b><span>The freelancer submits a public URL. Only public http(s) addresses are allowed.</span></li>
+    <li><b>Verify</b><span>Headless Chromium captures desktop and mobile screenshots and runs checks. Gemini judges each criterion and must cite evidence.</span></li>
+    <li><b>Release</b><span>All pass: the payment is captured to the freelancer. Otherwise the freelancer gets a fix list and can resubmit, or the client cancels and the hold is voided.</span></li>
+  </ol>
+</section>
+
+<% if (showcase.length) { %>
+<section class="section">
+  <h2>See finished examples</h2>
+  <div class="showcase">
+    <% showcase.forEach(m => { %>
+      <a class="card" href="/c/<%= m.client_token %>">
+        <div class="card-head"><h3 style="margin:0"><%= m.title.replace('Showcase: ', '') %></h3><span class="badge s-<%= m.status.toLowerCase() %>"><%= labels[m.status] %></span></div>
+        <p class="muted small" style="margin:0">Real Gemini verification of the bundled <%= m.title.includes('passes') ? 'good' : 'broken' %> demo site. Read-only. Open the evidence report →</p>
+      </a>
+    <% }) %>
+  </div>
+</section>
+<% } %>
+
+<section class="section">
+  <h2>Under the hood</h2>
+  <div class="tech">
+    <div class="card"><h3>PayPal Orders v2</h3><p>AUTHORIZE at checkout, then capture on pass, void on cancel, refund after payout. The freelancer is the order’s payee, so captured funds go straight to them.</p></div>
+    <div class="card"><h3>Gemini vision</h3><p>Strict JSON verdict per criterion. A pass without cited evidence counts as a fail, and page text is treated as untrusted data, so prompt injection doesn’t work.</p></div>
+    <div class="card"><h3>Sandboxed browser</h3><p>Playwright runs behind an egress proxy that blocks private and internal addresses, including redirects, on every request.</p></div>
+  </div>
+</section>
 <%- include('partials/foot') %>

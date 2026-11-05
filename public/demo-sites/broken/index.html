@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pan de Casa</title>
+  <meta name="robots" content="noindex">
+  <style>
+    body { margin: 0; font: 16px/1.5 Georgia, serif; color: #3b2414; background: #fff9f0; }
+    .wrap { padding: 0 16px; }
+    /* Bug: fixed width banner overflows on phones */
+    .banner { width: 1100px; background: #b8641f; color: #fff; padding: 14px 20px; font-weight: 700; }
+    h1 { font-size: 40px; margin: 18px 0 8px; }
+    .photo { width: 100%; max-width: 640px; height: 220px; background: #eee; display: block; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <div class="banner">Pan de Casa · Fresh bread every morning · Order online soon!</div>
+  <div class="wrap">
+    <h1>Pan de Casa</h1>
+    <!-- Bug: the image file is missing -->
+    <img class="photo" src="./missing-bread-photo.jpg" alt="Our bread">
+
+    <h2>Opening hours</h2>
+    <p>Monday to Friday, 7:00 – 19:00.</p>
+
+    <h2>Menu</h2>
+    <ul>
+      <li>Sourdough loaf</li>
+      <li>Butter croissant</li>
+      <li>Cinnamon roll</li>
+    </ul>
+
+    <h2>Contact</h2>
+    <p>Call us or drop by the shop.</p>
+  </div>
+  <script>
+    // Bug: the script calls a function that doesn't exist
+    window.addEventListener('load', function () { initOrderWidget({ target: '#order' }); });
+  </script>
+</body>
+</html>
