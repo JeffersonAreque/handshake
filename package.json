@@ -1,0 +1,11 @@
+{
+  "name": "handshake",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Milestone escrow where an AI agent verifies delivery before PayPal releases funds",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "spike": "node --env-file-if-exists=.env scripts/paypal-spike.mjs"
+  }
+}
