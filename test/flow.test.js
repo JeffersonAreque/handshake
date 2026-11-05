@@ -141,6 +141,16 @@ test('private URLs are rejected at submission', async (t) => {
   assert.equal((await getMilestone(db, m.id)).status, 'FUNDED');
 });
 
+test('browser probe only opens allowlisted sites and is rate limited', async (t) => {
+  const { server, base } = await setup({});
+  t.after(() => server.close());
+  assert.equal((await fetch(`${base}/healthz/browser?site=http://169.254.169.254`)).status, 400);
+  const ok = await fetch(`${base}/healthz/browser?site=example`);
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).url, 'https://example.com');
+  assert.equal((await fetch(`${base}/healthz/browser?site=wikipedia`)).status, 429);
+});
+
 test('invalid milestone input is rejected', async (t) => {
   const { server, form } = await setup({});
   t.after(() => server.close());

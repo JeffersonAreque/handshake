@@ -1,6 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { memoryReport } from './memory.js';
 import express from 'express';
 import * as store from './db.js';
 import { STATUS, transition, TransitionError } from './status.js';
@@ -66,14 +66,24 @@ export function createApp({ db, paypal, verifier, config }) {
   };
 
   app.get('/healthz', (req, res) => {
-    // Container memory (cgroup v2) helps confirm Chromium fits the instance.
-    const readMb = (f) => { try { return Math.round(Number(fs.readFileSync(f, 'utf8').trim()) / 1048576); } catch { return null; } };
-    res.json({
-      ok: true,
-      node: process.version,
-      storage: config.storage,
-      memoryMb: { current: readMb('/sys/fs/cgroup/memory.current'), peak: readMb('/sys/fs/cgroup/memory.peak'), rss: Math.round(process.memoryUsage().rss / 1048576) },
-    });
+    res.json({ ok: true, node: process.version, storage: config.storage, memory: memoryReport() });
+  });
+
+  // Diagnostic browser run against a fixed allowlist only (no user URLs),
+  // at most once every 2 minutes, so it can't be used to load the server.
+  const PROBE_SITES = { example: 'https://example.com', wikipedia: 'https://www.wikipedia.org' };
+  let lastProbe = 0;
+  app.get('/healthz/browser', async (req, res) => {
+    const url = PROBE_SITES[req.query.site];
+    if (!url) return res.status(400).json({ error: `site must be one of: ${Object.keys(PROBE_SITES).join(', ')}` });
+    const wait = lastProbe + 120_000 - Date.now();
+    if (wait > 0) return res.status(429).json({ error: `Try again in ${Math.ceil(wait / 1000)} s` });
+    lastProbe = Date.now();
+    try {
+      res.json(await verifier.probe(url));
+    } catch (err) {
+      res.status(502).json({ error: err.message.split('\n')[0], memory: memoryReport() });
+    }
   });
 
   app.get('/', (req, res) => res.render('landing', { title: 'Handshake' }));

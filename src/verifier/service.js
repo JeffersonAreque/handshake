@@ -2,6 +2,7 @@
 // moves money according to the result: capture on pass, nothing on fail.
 import * as store from '../db.js';
 import { STATUS, transition } from '../status.js';
+import { trackMemory, memoryReport } from '../memory.js';
 
 const RUN_TIMEOUT_MS = 3 * 60_000;
 
@@ -41,7 +42,7 @@ export function createVerifier({ db, paypal, judge, capture, allowPrivate = fals
     try {
       report = await withTimeout(
         (async () => {
-          const { checks, images } = await capture(submission.url, { allowPrivate });
+          const { checks, images } = await trackMemory(`verify ${m.id}/${submission.id}`, () => capture(submission.url, { allowPrivate }));
           const verdicts = await judge.judge({ criteria: m.criteria, checks, images, milestone: m });
           return { checks, images, verdicts, error: null };
         })(),
@@ -100,5 +101,22 @@ export function createVerifier({ db, paypal, judge, capture, allowPrivate = fals
     }
   }
 
-  return { enqueue, payout, recover, idle: () => chain };
+  /** Diagnostic: capture a fixed public URL in the queue and report memory. */
+  function probe(url) {
+    const run = chain.then(async () => {
+      const started = Date.now();
+      const { checks, images } = await trackMemory(`probe ${url}`, () => capture(url, { allowPrivate: false }));
+      return {
+        url,
+        ms: Date.now() - started,
+        httpStatus: checks.httpStatus,
+        screenshotsKb: images.map((i) => `${i.label}:${Math.round(i.data.length / 1024)}`),
+        memory: memoryReport(),
+      };
+    });
+    chain = run.catch(() => {});
+    return run;
+  }
+
+  return { enqueue, payout, recover, probe, idle: () => chain };
 }

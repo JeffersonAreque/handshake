@@ -6,11 +6,20 @@ import { startEgressProxy } from './egressProxy.js';
 
 const PAGE_TIMEOUT_MS = 60_000;
 const MAX_SHOT_HEIGHT = 3000;
-const LAUNCH_ARGS = ['--disable-dev-shm-usage', '--disable-gpu', '--disable-extensions', '--mute-audio', '--no-first-run', '--disable-quic'];
+// Tuned for a 512 MB container: one renderer process (site isolation off so
+// the limit is honored), a capped V8 heap per renderer, and no extra helpers.
+const LAUNCH_ARGS = [
+  '--disable-dev-shm-usage', '--disable-gpu', '--disable-extensions', '--mute-audio', '--no-first-run', '--disable-quic',
+  '--renderer-process-limit=1',
+  '--disable-site-isolation-trials',
+  '--disable-features=site-per-process,IsolateOrigins,Translate,MediaRouter,OptimizationHints,BackForwardCache',
+  '--js-flags=--max-old-space-size=128',
+  '--disable-background-networking', '--disable-component-update', '--disable-default-apps', '--disable-sync',
+];
 
 const VIEWPORTS = [
-  { label: 'desktop', options: { viewport: { width: 1280, height: 800 } } },
-  { label: 'mobile', options: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } },
+  { label: 'desktop', options: { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 } },
+  { label: 'mobile', options: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } },
 ];
 
 async function capturePage(browser, url, { label, options }) {
@@ -38,19 +47,23 @@ async function capturePage(browser, url, { label, options }) {
     throw new Error(`Could not open the page (${label}): ${err.message.split('\n')[0]}`);
   }
   const loadMs = Date.now() - started;
-  // Full page, capped in height and as JPEG, so evidence stays small in the DB.
-  const height = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => 0);
-  const shot = { type: 'jpeg', quality: 70, timeout: 15_000 };
-  const viewportSize = page.viewportSize();
-  const data = await page
-    .screenshot({ ...shot, fullPage: true, clip: { x: 0, y: 0, width: viewportSize.width, height: Math.min(Math.max(height, viewportSize.height), MAX_SHOT_HEIGHT) } })
-    .catch(() => page.screenshot(shot));
   const info = await page.evaluate(() => ({
     title: document.title,
     text: (document.body?.innerText || '').slice(0, 4000),
     brokenImages: [...document.images].filter((i) => i.complete && i.naturalWidth === 0).map((i) => i.currentSrc || i.src).slice(0, 20),
     horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+    height: document.documentElement.scrollHeight,
   }));
+  // Full page, capped in height and as JPEG, so evidence stays small in the DB.
+  const shot = { type: 'jpeg', quality: 70, timeout: 15_000 };
+  const viewportSize = page.viewportSize();
+  const data = await page
+    .screenshot({ ...shot, fullPage: true, clip: { x: 0, y: 0, width: viewportSize.width, height: Math.min(Math.max(info.height, viewportSize.height), MAX_SHOT_HEIGHT) } })
+    .catch(() => page.screenshot(shot));
+  // Free the renderer right away, before the next viewport starts.
+  await page.close().catch(() => {});
+  await context.close().catch(() => {});
+  delete info.height;
   const result = {
     label,
     data,
@@ -62,7 +75,6 @@ async function capturePage(browser, url, { label, options }) {
     failedRequests,
     ...info,
   };
-  await context.close();
   return result;
 }
 
