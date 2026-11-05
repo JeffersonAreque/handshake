@@ -6,7 +6,10 @@ import { STATUS, transition } from '../status.js';
 import { trackMemory, memoryReport } from '../memory.js';
 import { publishStep } from '../bus.js';
 
-const RUN_TIMEOUT_MS = 3 * 60_000;
+const RUN_TIMEOUT_MS = 5 * 60_000;
+// When every AI model is busy, ask again after these waits (the screenshots
+// are already captured, so no browser is involved) before giving up.
+const JUDGE_RETRY_DELAYS_MS = [20_000, 40_000];
 
 function withTimeout(promise, ms, message) {
   let timer;
@@ -16,7 +19,7 @@ function withTimeout(promise, ms, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
-export function createVerifier({ db, money, ai, capture, allowPrivate = false, log = console }) {
+export function createVerifier({ db, money, ai, capture, allowPrivate = false, log = console, judgeRetryDelays = JUDGE_RETRY_DELAYS_MS, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   let chain = Promise.resolve();
 
   /** Capture the held payment to the freelancer. Safe to retry. */
@@ -54,10 +57,24 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
           const { checks, images } = await trackMemory(`verify ${m.id}/${submission.id}`, () =>
             capture(submission.url, { allowPrivate, onStep: step })
           );
-          step(`Asking ${ai.provider === 'gemini' ? 'Gemini' : 'the verifier'} to check ${m.criteria.length} criteria…`);
+          const who = ai.provider === 'gemini' ? 'Gemini' : 'the verifier';
+          step(`Asking ${who} to check ${m.criteria.length} criteria…`);
           let judged;
           try {
-            judged = await ai.judge({ criteria: m.criteria, checks, images });
+            for (let attempt = 0; ; attempt++) {
+              try {
+                judged = await ai.judge({ criteria: m.criteria, checks, images });
+                break;
+              } catch (err) {
+                const busy = err?.unavailable && !err?.gone;
+                if (!busy || attempt >= judgeRetryDelays.length) throw err;
+                const wait = judgeRetryDelays[attempt];
+                log.error(`[verify] milestone ${m.id}: ${err.message}; asking again in ${wait / 1000} s`);
+                step(`${who} is busy right now; trying again in ${Math.round(wait / 1000)} s (attempt ${attempt + 2} of ${judgeRetryDelays.length + 1})…`);
+                await sleep(wait);
+                step(`Asking ${who} again…`);
+              }
+            }
           } catch (err) {
             // The AI provider failed (quota, outage, model gone): nothing was
             // judged. Keep the evidence; don't blame the work.
@@ -74,7 +91,7 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
           return { checks, images, verdicts: judged.verdicts, model: judged.model, error: null };
         })(),
         RUN_TIMEOUT_MS,
-        'Verification timed out after 3 minutes'
+        'Verification timed out after 5 minutes'
       );
     } catch (err) {
       report = {

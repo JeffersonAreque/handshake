@@ -4,7 +4,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { JUDGE_SYSTEM, judgeUserText, DRAFT_SYSTEM, draftUserText, FIX_SYSTEM, fixUserText } from './prompts.js';
 
 const TIMEOUT_MS = 90_000;
-const RETRY_DELAYS_MS = [1_500, 4_000];
+const RETRY_DELAYS_MS = [2_000, 6_000];
 
 const VERDICTS_SCHEMA = {
   type: Type.OBJECT,

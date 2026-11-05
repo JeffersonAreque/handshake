@@ -228,16 +228,21 @@ test('AI outage: attempt is not judged, freelancer is told plainly and can resub
   t.after(() => server.close());
   await fund(ctx);
   let fixCalls = 0;
+  let judgeCalls = 0;
+  const waits = [];
   const downAi = {
     ...mockAi,
-    judge: async () => { throw new AiError('Gemini quota exceeded (HTTP 429 RESOURCE_EXHAUSTED)', { unavailable: true, quota: true }); },
+    judge: async () => { judgeCalls++; throw new AiError('Gemini quota exceeded (HTTP 429 RESOURCE_EXHAUSTED)', { unavailable: true, quota: true }); },
     fixList: async () => { fixCalls++; return []; },
   };
   const capture = async (url) => ({ checks: { url, ...goodPage }, images: [{ label: 'desktop', data: JPEG }] });
-  const down = createVerifier({ db, money: ctx.money, ai: downAi, capture, log: { error() {} } });
+  const down = createVerifier({ db, money: ctx.money, ai: downAi, capture, log: { error() {} }, sleep: async (ms) => { waits.push(ms); } });
   await db.execute({ sql: "UPDATE milestones SET status = 'SUBMITTED' WHERE id = ?", args: [m.id] });
   const s = await db.execute({ sql: "INSERT INTO submissions (milestone_id, url, attempt) VALUES (?, 'https://93.184.216.34/', 1)", args: [m.id] });
   await down.enqueue(m.id, Number(s.lastInsertRowid));
+  // The AI was asked 3 times (waits of 20 s and 40 s) before giving up.
+  assert.equal(judgeCalls, 3);
+  assert.deepEqual(waits, [20_000, 40_000]);
   // Not a failure: back to FUNDED, money still held, nothing captured.
   assert.equal((await getMilestone(db, m.id)).status, 'FUNDED');
   assert.equal(fixCalls, 0, 'no fix list for an attempt that was not judged');
@@ -266,6 +271,31 @@ test('AI outage: attempt is not judged, freelancer is told plainly and can resub
   assert.equal((await form(`/f/${m.freelancer_token}/submit`, { url: 'https://93.184.216.34/' })).status, 303);
   await ctx.verifier.idle();
   assert.equal((await getMilestone(db, m.id)).status, 'PAID');
+});
+
+test('AI busy once, then answers: the attempt is judged normally', async (t) => {
+  const ctx = await setup({ 'https://93.184.216.34/broken': brokenPage });
+  const { db, server, m } = ctx;
+  t.after(() => server.close());
+  await fund(ctx);
+  let calls = 0;
+  const flakyAi = {
+    ...mockAi,
+    judge: async (args) => {
+      calls++;
+      if (calls === 1) throw new AiError('Gemini temporarily unavailable (HTTP 503 UNAVAILABLE)', { unavailable: true });
+      return mockAi.judge(args);
+    },
+  };
+  const capture = async (url) => ({ checks: { url, ...brokenPage }, images: [] });
+  const v = createVerifier({ db, money: ctx.money, ai: flakyAi, capture, log: { error() {} }, sleep: async () => {} });
+  await db.execute({ sql: "UPDATE milestones SET status = 'SUBMITTED' WHERE id = ?", args: [m.id] });
+  const s = await db.execute({ sql: "INSERT INTO submissions (milestone_id, url, attempt) VALUES (?, 'https://93.184.216.34/broken', 1)", args: [m.id] });
+  await v.enqueue(m.id, Number(s.lastInsertRowid));
+  assert.equal(calls, 2);
+  assert.equal((await getMilestone(db, m.id)).status, 'FAILED', 'a real verdict: the broken page fails');
+  const [r] = toRows(await db.execute({ sql: 'SELECT judged FROM reports WHERE milestone_id = ?', args: [m.id] }));
+  assert.equal(r.judged, 1);
 });
 
 test('fail → resubmit → client voids; nothing is captured', async (t) => {
