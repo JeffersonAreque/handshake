@@ -76,6 +76,13 @@ test('create → fund → submit → pass → paid to the freelancer', async (t)
   assert.equal((await json(`/api/c/${m.client_token}/authorize`, { orderID: 'ORDER1' })).status, 200);
   assert.equal((await getMilestone(db, m.id)).status, 'FUNDED');
 
+  // After funding, the client sees the next step and a waiting timeline step.
+  const funded = await (await fetch(`${base}/c/${m.client_token}`)).text();
+  assert.match(funded, /Next step/);
+  assert.match(funded, /Waiting for the freelancer to deliver/);
+  assert.match(funded, /<span class="label">Waiting for delivery<\/span>/);
+  assert.doesNotMatch(funded, /<span class="label">Submitted<\/span>\s*<span class="sub">Waiting/);
+
   // Freelancer token can't use client endpoints.
   assert.equal((await json(`/api/c/${m.freelancer_token}/order`)).status, 404);
 

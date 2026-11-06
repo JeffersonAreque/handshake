@@ -1,8 +1,9 @@
 // Builds the milestone timeline shown on every page:
 // Funded → Submitted → Verifying → Passed → Paid, plus terminal branches.
+// `waiting` is shown instead of `label` while the step waits for a person.
 const STEPS = [
-  { key: 'FUNDED', label: 'Funded', hint: 'Payment held in PayPal' },
-  { key: 'SUBMITTED', label: 'Submitted', hint: 'Freelancer delivered a URL' },
+  { key: 'FUNDED', label: 'Funded', hint: 'Payment held in PayPal', waiting: 'Waiting for payment', waitingHint: 'The client pays with PayPal' },
+  { key: 'SUBMITTED', label: 'Submitted', hint: 'Freelancer delivered a URL', waiting: 'Waiting for delivery', waitingHint: 'The freelancer submits a URL' },
   { key: 'VERIFYING', label: 'Verifying', hint: 'AI checks every criterion' },
   { key: 'PASSED', label: 'Passed', hint: 'All criteria met' },
   { key: 'PAID', label: 'Paid', hint: 'Captured to the freelancer' },

@@ -40,6 +40,13 @@
 
 <%- include('partials/timeline', { timeline, busy, step }) %>
 
+<% if (role === 'client' && m.status === 'FUNDED' && !showcase) { %>
+  <div class="next-step" role="status">
+    <span class="next-step-tag">Next step</span>
+    <span><%= notJudged ? 'Waiting for the freelancer to resubmit.' : 'Waiting for the freelancer to deliver.' %> <a href="<%= freelancerLink %>" target="_blank" rel="noreferrer">Open the freelancer link</a> to try it yourself.</span>
+  </div>
+<% } %>
+
 <div class="grid-2" style="margin-top:16px">
   <div>
     <% if (role === 'client') { %>
@@ -147,12 +154,16 @@
             </div>
           </form>
           <% if (m.demo_kind) { %>
-            <div class="btn-row" style="margin-top:12px">
+            <div class="demo-row">
               <span class="small muted">Demo deliveries:</span>
-              <button class="btn btn-sm" type="button" data-url="<%= demoSites.good %>">✓ Good site</button>
-              <button class="btn btn-sm" type="button" data-url="<%= demoSites.broken %>">✕ Broken site</button>
-              <a class="small" href="<%= demoSites.good %>" target="_blank" rel="noreferrer">preview good</a>
-              <a class="small" href="<%= demoSites.broken %>" target="_blank" rel="noreferrer">preview broken</a>
+              <span class="demo-pick">
+                <button class="btn btn-sm" type="button" data-url="<%= demoSites.good %>">✓ Good site</button>
+                <button class="btn btn-sm" type="button" data-url="<%= demoSites.broken %>">✕ Broken site</button>
+              </span>
+              <span class="demo-preview small">Preview:
+                <a href="<%= demoSites.good %>" target="_blank" rel="noreferrer">good</a> ·
+                <a href="<%= demoSites.broken %>" target="_blank" rel="noreferrer">broken</a>
+              </span>
             </div>
             <script>
               document.querySelectorAll('[data-url]').forEach((b) => b.addEventListener('click', () => {
@@ -195,7 +206,7 @@
         <li class="report-row">
           <% if (shot) { %><img src="/e/<%= token %>/<%= r.submission_id %>/<%= shot.file %>" alt="" loading="lazy"><% } else { %><span></span><% } %>
           <div class="meta">
-            <div><% if (!r.judged) { %><span class="badge s-notjudged">NOT JUDGED</span><% } else { %><span class="badge <%= r.passed ? 'pass' : 'fail' %>"><%= r.passed ? 'PASS' : 'FAIL' %> · <%= passed %>/<%= r.verdicts.length %></span><% } %> <b>Attempt <%= r.attempt %></b></div>
+            <div><% if (!r.judged) { %><span class="badge s-notjudged">NOT JUDGED</span><% } else { %><span class="badge <%= r.passed ? 'pass' : 's-failed' %>"><%= r.passed ? 'PASS' : 'FAIL' %> ·<%= passed %>/<%= r.verdicts.length %></span><% } %> <b>Attempt <%= r.attempt %></b></div>
             <div class="small muted mono"><%= r.url %></div>
             <div class="small muted"><%= r.judged ? 'Judged by' : 'Tried' %> <%= r.provider ? providerLabel(r.provider) + ' · ' : '' %><%= r.model %></div>
           </div>

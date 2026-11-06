@@ -18,8 +18,8 @@
       <strong style="color:var(--text-2)">—</strong>
       <span class="badge s-notjudged">Not judged</span>
     <% } else { %>
-      <strong style="color:var(<%= r.passed ? '--ok' : '--bad' %>)"><%= passedCount %>/<%= r.verdicts.length %></strong>
-      <span class="badge <%= r.passed ? 'pass' : 'fail' %>"><%= r.passed ? 'All criteria passed' : 'Changes needed' %></span>
+      <strong style="color:var(<%= r.passed ? '--ok' : '--warn' %>)"><%= passedCount %>/<%= r.verdicts.length %></strong>
+      <span class="badge <%= r.passed ? 'pass' : 's-failed' %>"><%= r.passed ? 'All criteria passed' : 'Changes needed' %></span>
     <% } %>
   </div>
 </div>

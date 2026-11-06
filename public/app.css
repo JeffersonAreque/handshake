@@ -64,7 +64,7 @@
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--font); -webkit-font-smoothing: antialiased; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--font); -webkit-font-smoothing: antialiased; overflow-x: clip; }
 a { color: var(--brand); text-underline-offset: 3px; }
 h1, h2, h3 { line-height: 1.2; letter-spacing: -0.015em; margin: 0 0 .5em; }
 h1 { font-size: clamp(28px, 4.2vw, 40px); font-weight: 750; }
@@ -97,10 +97,13 @@ main.container { padding-top: 28px; padding-bottom: 56px; }
 .icon-btn:hover { color: var(--text); border-color: var(--border-strong); }
 @media (max-width: 640px) {
   .site-nav .hide-sm { display: none; }
-  .site-header .container { gap: 10px; }
+  .site-header .container { gap: 8px; }
+  .site-nav { gap: 2px; }
   .site-nav a { padding: 8px 6px; }
+  .brand { font-size: 17px; gap: 8px; }
+  .sandbox-pill { padding: 2px 7px; font-size: 11.5px; }
 }
-@media (max-width: 380px) { .sandbox-pill { display: none; } }
+@media (max-width: 360px) { .sandbox-pill { display: none; } }
 
 .site-footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
 .site-footer .container { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; padding-top: 20px; padding-bottom: 28px; }
@@ -128,7 +131,7 @@ form.inline { display: inline; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-sm); }
 .card + .card { margin-top: 16px; }
 .showcase > .card + .card, .tech > .card + .card, .try-grid > * + * { margin-top: 0; }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin-bottom: 14px; }
 .card-head h2 { margin: 0; }
 .card.soft { background: var(--surface-2); }
 @media (max-width: 520px) { .card { padding: 18px; } }
@@ -140,7 +143,9 @@ form.inline { display: inline; }
 .badge.s-draft, .badge.s-funded { background: var(--info-soft); color: var(--info); }
 .badge.s-submitted, .badge.s-verifying { background: var(--warn-soft); color: var(--warn); }
 .badge.s-passed, .badge.s-paid, .badge.pass { background: var(--ok-soft); color: var(--ok); }
-.badge.s-failed, .badge.fail { background: var(--bad-soft); color: var(--bad); }
+/* "Changes needed" is a normal step: amber. Red (.fail) is for real errors. */
+.badge.s-failed { background: var(--warn-soft); color: var(--warn); }
+.badge.fail { background: var(--bad-soft); color: var(--bad); }
 .badge.s-voided, .badge.s-refunded, .badge.s-notjudged { background: var(--bg-tint); color: var(--text-2); }
 .chip { display: inline-block; font: 12px/1.6 var(--mono); padding: 1px 8px; border-radius: 99px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); }
 .alert { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius-sm); margin: 0 0 16px; font-size: 15px; border: 1px solid transparent; }
@@ -190,11 +195,11 @@ textarea { resize: vertical; }
 .timeline .current .dot { border-color: var(--brand); color: var(--brand); box-shadow: 0 0 0 5px var(--brand-soft); }
 .timeline .active .dot { border-color: var(--warn); color: var(--warn); box-shadow: 0 0 0 5px var(--warn-soft); }
 .timeline .active .dot::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--warn); animation: spin 1s linear infinite; }
-.timeline .failed .dot { background: var(--bad); border-color: var(--bad); color: #fff; }
+.timeline .failed .dot { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
 .timeline .skipped { opacity: .45; }
 .timeline .label { display: block; font-weight: 650; font-size: 14.5px; }
 .timeline .sub { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.35; margin-top: 2px; }
-.timeline .failed .label { color: var(--bad); }
+.timeline .failed .label { color: var(--warn); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .timeline .active .dot::after { animation: none; } }
 @media (max-width: 640px) {
@@ -206,11 +211,16 @@ textarea { resize: vertical; }
   .timeline .label { align-self: end; }
 }
 .outcome { margin-top: 18px; padding: 12px 14px; border-radius: 12px; font-weight: 600; font-size: 15px; text-align: center; }
-.outcome.failed { background: var(--bad-soft); color: var(--bad); }
+.outcome.failed { background: var(--warn-soft); color: var(--warn); }
 .outcome.voided, .outcome.refunded, .outcome.notjudged { background: var(--bg-tint); color: var(--text-2); }
 .live { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); font-weight: 600; font-size: 15px; }
 .live .spinner { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
 .live[hidden] { display: none; }
+.next-step { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; margin-top: 16px; padding: 14px 16px; border-radius: var(--radius); background: var(--info-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--info) 30%, transparent); font-size: 15px; }
+.next-step-tag { flex: none; font-size: 12px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; color: var(--info); }
+.demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; }
+.demo-pick { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.demo-preview { color: var(--muted); white-space: nowrap; }
 
 /* ---------- Criteria, verdicts, fixes ---------- */
 .criteria { margin: 0; padding: 0; list-style: none; counter-reset: c; display: grid; gap: 10px; }
@@ -220,8 +230,8 @@ textarea { resize: vertical; }
 .verdict { display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-2); }
 .verdict .mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-weight: 800; font-size: 15px; }
 .verdict.pass .mark { background: var(--ok-soft); color: var(--ok); }
-.verdict.fail .mark { background: var(--bad-soft); color: var(--bad); }
-.verdict.fail { border-color: color-mix(in srgb, var(--bad) 30%, var(--border)); }
+.verdict.fail .mark { background: var(--warn-soft); color: var(--warn); }
+.verdict.fail { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
 .verdict b { display: block; font-size: 15px; margin-bottom: 2px; }
 .verdict p { margin: 0; color: var(--text-2); font-size: 14.5px; }
 .verdict .evidence { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -264,7 +274,11 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 /* ---------- Landing ---------- */
 .hero { position: relative; padding: 56px 0 36px; }
-.hero::before { content: ""; position: absolute; inset: -40px -100vw auto; height: 420px; z-index: -1;
+.hero { isolation: isolate; }
+/* Full-bleed glow: exactly the viewport width, faded at the bottom. body
+   clips any scrollbar-width excess, so the page never scrolls sideways. */
+.hero::before { content: ""; position: absolute; inset: -40px calc(50% - 50vw) auto; height: 460px; z-index: -1;
+  -webkit-mask-image: linear-gradient(#000 55%, transparent); mask-image: linear-gradient(#000 55%, transparent);
   background: radial-gradient(600px 260px at 15% 10%, color-mix(in srgb, var(--brand) 18%, transparent), transparent 70%),
               radial-gradient(500px 240px at 85% 0%, color-mix(in srgb, var(--ok) 14%, transparent), transparent 70%); }
 .hero h1 { font-size: clamp(34px, 6vw, 58px); max-width: 15ch; letter-spacing: -0.03em; }

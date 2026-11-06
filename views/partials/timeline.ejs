@@ -7,8 +7,8 @@
     <% timeline.steps.forEach((s, i) => { %>
       <li class="<%= s.state %>" aria-current="<%= ['current', 'active'].includes(s.state) ? 'step' : 'false' %>">
         <span class="dot"><%= icon[s.state] || (i + 1) %></span>
-        <span class="label"><%= s.state === 'failed' ? 'Changes needed' : s.label %></span>
-        <span class="sub"><%= s.at ? fmt(s.at) : (s.state === 'current' ? 'Waiting' : s.state === 'active' ? 'In progress…' : s.hint) %></span>
+        <span class="label"><%= s.state === 'failed' ? 'Changes needed' : (s.state === 'current' && s.waiting) ? s.waiting : s.label %></span>
+        <span class="sub"><%= s.at ? fmt(s.at) : s.state === 'current' ? (s.waitingHint || 'Waiting') : s.state === 'active' ? 'In progress…' : s.hint %></span>
       </li>
     <% }) %>
   </ol>
