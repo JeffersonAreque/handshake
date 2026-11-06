@@ -323,6 +323,8 @@ test('fail → resubmit → client voids; nothing is captured', async (t) => {
   const html = await report.text();
   assert.match(html, /Evidence report/);
   assert.match(html, /Suggested fixes/);
+  assert.match(html, /id="judged-by">Mock · mock</, 'the report names the provider and model that judged it');
+  assert.match(page, /Judged by Mock · mock/);
   const reportId = reportPath.split('/').pop();
   assert.equal((await fetch(`${ctx.base}/r/${m.client_token}/${reportId}`)).status, 200);
   assert.equal((await fetch(`${ctx.base}/r/someone-else/${reportId}`)).status, 404);

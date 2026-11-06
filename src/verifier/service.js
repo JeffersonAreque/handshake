@@ -5,6 +5,7 @@ import * as store from '../db.js';
 import { STATUS, transition } from '../status.js';
 import { trackMemory, memoryReport } from '../memory.js';
 import { publishStep } from '../bus.js';
+import { providerLabel } from '../ai/index.js';
 
 const RUN_TIMEOUT_MS = 5 * 60_000;
 // When every AI model is busy, ask again after these waits (the screenshots
@@ -57,7 +58,7 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
           const { checks, images } = await trackMemory(`verify ${m.id}/${submission.id}`, () =>
             capture(submission.url, { allowPrivate, onStep: step })
           );
-          const who = ai.provider === 'gemini' ? 'Gemini' : 'the verifier';
+          const who = ai.provider === 'mock' ? 'the verifier' : providerLabel(ai.provider);
           step(`Asking ${who} to check ${m.criteria.length} criteria…`);
           let judged;
           try {
@@ -88,7 +89,7 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
               notJudged: true,
             };
           }
-          return { checks, images, verdicts: judged.verdicts, model: judged.model, error: null };
+          return { checks, images, verdicts: judged.verdicts, model: judged.model, provider: judged.provider, error: null };
         })(),
         RUN_TIMEOUT_MS,
         'Verification timed out after 5 minutes'
@@ -119,6 +120,7 @@ export function createVerifier({ db, money, ai, capture, allowPrivate = false, l
       judged: !notJudged,
       fixes,
       model: report.model ?? ai.model,
+      provider: report.provider ?? ai.provider,
       checks: report.checks,
       verdicts: report.verdicts,
       error: report.error,

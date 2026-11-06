@@ -182,7 +182,7 @@
       <div class="card-head"><h2>Acceptance criteria</h2><span class="muted small"><%= m.criteria.length %></span></div>
       <ol class="criteria"><% m.criteria.forEach(c => { %><li><span><%= c %></span></li><% }) %></ol>
       <% if (m.brief) { %><details style="margin-top:14px"><summary class="small">Client brief</summary><p class="small muted" style="margin:8px 0 0"><%= m.brief %></p></details><% } %>
-      <p class="hint" style="margin-top:14px">Checked by <b><%= aiProvider === 'gemini' ? 'Gemini' : 'mock verifier' %></b> (<%= aiModel %>) from desktop and mobile screenshots plus browser checks.</p>
+      <p class="hint" style="margin-top:14px">Checked by <b><%= aiProvider === 'mock' ? 'mock verifier' : providerLabel(aiProvider) %></b> (<%= aiModel %>)<% if (aiFallback) { %>, with <%= aiFallback %> as a fallback<% } %>, from desktop and mobile screenshots plus browser checks.</p>
     </section>
   </div>
 </div>
@@ -197,6 +197,7 @@
           <div class="meta">
             <div><% if (!r.judged) { %><span class="badge s-notjudged">NOT JUDGED</span><% } else { %><span class="badge <%= r.passed ? 'pass' : 'fail' %>"><%= r.passed ? 'PASS' : 'FAIL' %> · <%= passed %>/<%= r.verdicts.length %></span><% } %> <b>Attempt <%= r.attempt %></b></div>
             <div class="small muted mono"><%= r.url %></div>
+            <div class="small muted"><%= r.judged ? 'Judged by' : 'Tried' %> <%= r.provider ? providerLabel(r.provider) + ' · ' : '' %><%= r.model %></div>
           </div>
           <a class="btn btn-sm" href="/r/<%= token %>/<%= r.id %>"><%= r.judged ? 'Evidence report →' : 'Details →' %></a>
         </li>

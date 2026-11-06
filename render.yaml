@@ -28,6 +28,12 @@ services:
       # Optional, defaults to gemini-2.5-flash
       - key: AI_MODEL
         sync: false
+      # Fallback provider after the Gemini chain (vision model qwen/qwen3.8-27b
+      # by default; GROQ_MODEL overrides it). Without the key, no Groq fallback.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        sync: false
       # One-click demo. DEMO_PAYEE_EMAIL (sandbox business account) enables
       # "Try as client"; the buyer login is shown on demo checkout pages.
       - key: DEMO_PAYEE_EMAIL

@@ -90,6 +90,8 @@ const MIGRATIONS = [
   'ALTER TABLE milestones ADD COLUMN demo_kind TEXT',
   // 0 when the AI verifier was unavailable and nothing was judged
   'ALTER TABLE reports ADD COLUMN judged INTEGER NOT NULL DEFAULT 1',
+  // AI provider that judged the attempt ('gemini', 'groq', 'mock'); null on older rows
+  'ALTER TABLE reports ADD COLUMN provider TEXT',
 ];
 
 /** Converts a libsql result to plain row objects. */
@@ -169,9 +171,9 @@ export async function addReport(db, r) {
         q('INSERT OR REPLACE INTO screenshots (submission_id, label, mime, data) VALUES (?, ?, ?, ?)', [r.submissionId, img.label, img.mime ?? 'image/jpeg', img.data])
       ),
       q(
-        `INSERT INTO reports (submission_id, milestone_id, passed, verdicts, checks, screenshots, model, error, fixes, judged)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [r.submissionId, r.milestoneId, r.passed ? 1 : 0, JSON.stringify(r.verdicts), JSON.stringify(r.checks), JSON.stringify(r.screenshots), r.model, r.error ?? null, JSON.stringify(r.fixes ?? []), r.judged === false ? 0 : 1]
+        `INSERT INTO reports (submission_id, milestone_id, passed, verdicts, checks, screenshots, model, error, fixes, judged, provider)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [r.submissionId, r.milestoneId, r.passed ? 1 : 0, JSON.stringify(r.verdicts), JSON.stringify(r.checks), JSON.stringify(r.screenshots), r.model, r.error ?? null, JSON.stringify(r.fixes ?? []), r.judged === false ? 0 : 1, r.provider ?? null]
       ),
     ],
     'write'

@@ -152,8 +152,8 @@ test('gemini: a model that is gone (404) is skipped, reported clearly and droppe
   const ai = createAi({ provider: 'gemini', apiKey: 'k', client, fallbackModels: ['gemini-2.5-flash-lite', 'gemini-3.5-flash-lite'] });
   const first = await ai.judge({ criteria: ['x'], checks: okChecks });
   assert.equal(first.model, 'gemini-3.5-flash-lite');
-  assert.deepEqual(ai.status().chain, ['gemini-2.5-flash', 'gemini-3.5-flash-lite']);
-  assert.equal(ai.status().health['gemini-2.5-flash-lite'].error, 'Gemini model not available (HTTP 404 NOT_FOUND)');
+  assert.deepEqual(ai.status().chain, ['gemini:gemini-2.5-flash', 'gemini:gemini-3.5-flash-lite']);
+  assert.equal(ai.status().health['gemini:gemini-2.5-flash-lite'].error, 'Gemini model not available (HTTP 404 NOT_FOUND)');
   await ai.judge({ criteria: ['x'], checks: okChecks });
   assert.ok(!client.calls.slice(3).some((c) => c.model === 'gemini-2.5-flash-lite'), 'not called again');
 
@@ -179,11 +179,11 @@ test('startup check: probes every model, drops gone ones, keeps quota-limited on
   const ai = createAi({ provider: 'gemini', apiKey: 'k', client, fallbackModels: ['gemini-2.5-flash-lite', 'gemini-flash-lite-latest'] });
   const { chain, health } = await ai.checkModels();
   assert.deepEqual(client.calls.map((c) => c.model), ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
-  assert.equal(health['gemini-2.5-flash'].ok, true);
-  assert.equal(health['gemini-2.5-flash-lite'].gone, true);
-  assert.equal(health['gemini-flash-lite-latest'].ok, false);
-  assert.deepEqual(chain, ['gemini-2.5-flash', 'gemini-flash-lite-latest']);
-  assert.deepEqual(await createAi({ provider: 'mock' }).checkModels(), { chain: ['mock'], health: {} });
+  assert.equal(health['gemini:gemini-2.5-flash'].ok, true);
+  assert.equal(health['gemini:gemini-2.5-flash-lite'].gone, true);
+  assert.equal(health['gemini:gemini-flash-lite-latest'].ok, false);
+  assert.deepEqual(chain, ['gemini:gemini-2.5-flash', 'gemini:gemini-flash-lite-latest']);
+  assert.deepEqual(await createAi({ provider: 'mock' }).checkModels(), { chain: ['mock:mock'], health: {} });
 });
 
 test('mock provider drafts criteria and fix lists', async () => {

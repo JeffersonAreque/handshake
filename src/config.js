@@ -26,6 +26,11 @@ export const config = {
     // available to the key ('none' disables). Default: gemini-3.5-flash-lite,gemini-flash-lite-latest
     fallbackModels: env.AI_FALLBACK_MODEL === 'none' ? [] : (env.AI_FALLBACK_MODEL || '').trim() || undefined,
     apiKey: (env.GEMINI_API_KEY || '').trim(),
+    // Fallback provider after the Gemini chain (or the only one with AI_PROVIDER=groq).
+    groq: {
+      apiKey: (env.GROQ_API_KEY || '').trim(),
+      model: (env.GROQ_MODEL || '').trim() || undefined, // default qwen/qwen3.8-27b (vision)
+    },
   },
   demo: {
     // Sandbox business account that receives "Try as client" payments.
@@ -49,6 +54,7 @@ export function describeConfig() {
     aiProvider: config.ai.provider,
     aiModel: config.ai.model ?? 'default',
     geminiKeySet: Boolean(config.ai.apiKey),
+    groqKeySet: Boolean(config.ai.groq.apiKey),
     allowPrivateUrls: config.allowPrivateUrls,
     demoClient: Boolean(config.demo.payeeEmail),
     demoBuyerShown: Boolean(config.demo.buyerEmail),

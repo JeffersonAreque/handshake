@@ -27,7 +27,7 @@
 <% if (!r.judged) { %>
   <div class="alert neutral"><div><b>Not judged, please resubmit.</b> <%= r.error %> The page was captured, but no criterion was evaluated, so this attempt counts neither as a pass nor as a fail.</div></div>
 <% } else { %>
-  <div class="alert info"><div>Verified by <b><%= r.model %></b>. Each pass had to cite evidence (a screenshot or a browser check), and page text was treated as untrusted data.</div></div>
+  <div class="alert info"><div>Verified by <b id="judged-by"><%= r.provider ? providerLabel(r.provider) + ' · ' : '' %><%= r.model %></b>. Each pass had to cite evidence (a screenshot or a browser check), and page text was treated as untrusted data.</div></div>
   <% if (r.error) { %><div class="alert warn"><%= r.error %></div><% } %>
 <% } %>
 

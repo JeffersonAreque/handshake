@@ -7,6 +7,7 @@ import { assertPublicUrl, UnsafeUrlError } from './urlSafety.js';
 import { buildTimeline } from './timeline.js';
 import { bus, currentStep } from './bus.js';
 import { DEMO, createDemoMilestone, demoSiteUrl, newToken } from './demo.js';
+import { providerLabel } from './ai/index.js';
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/i;
 
@@ -66,6 +67,12 @@ export function createApp({ db, paypal, money, verifier, ai, config }) {
     baseUrl: config.baseUrl,
     aiProvider: ai.provider,
     aiModel: ai.model,
+    // e.g. "Groq (qwen/qwen3.8-27b)" when a second provider is configured
+    aiFallback: (() => {
+      const other = ai.status().chain.find((c) => !c.startsWith(`${ai.provider}:`));
+      return other ? `${providerLabel(other.split(':')[0])} (${other.split(':').slice(1).join(':')})` : null;
+    })(),
+    providerLabel,
     demo: { buyerEmail: demo.buyerEmail, buyerPassword: demo.buyerPassword, clientEnabled: Boolean(demo.payeeEmail) },
   });
 
